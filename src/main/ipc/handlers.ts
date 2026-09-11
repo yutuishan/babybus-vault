@@ -13,6 +13,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { CH } from '@shared/ipc'
 import type {
   AppConfig,
+  ContentMatch,
   ExportResult,
   ImportResult,
   OpenResult,
@@ -25,7 +26,7 @@ import type { NodeView } from '@shared/types'
 import { Vault, VaultError } from '../vault/vault'
 import { isVaultDir, readVaultMeta, verifyPassword } from '../vault/vaultMeta'
 import { closeVault, currentVault, requireVault, setVault } from '../vault/session'
-import { forgetRecentVault, loadConfig, patchConfig, touchRecentVault } from '../config'
+import { loadConfig, patchConfig } from '../config'
 import { heartbeat, triggerLock } from '../autoLock'
 import { wipe } from '../crypto/secureBuffer'
 import { passwordIssues } from '../crypto/passwordPolicy'
@@ -123,13 +124,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle(CH.appConfigGet, (): AppConfig => loadConfig())
 
-  ipcMain.handle(CH.appConfigSet, (_e, patch: Partial<AppConfig>): AppConfig => {
-    // 关掉「记住最近」时立即清空，否则列表还在磁盘上等于没关
-    if (patch.rememberRecentVaults === false) {
-      return patchConfig({ ...patch, recentVaults: [] })
-    }
-    return patchConfig(patch)
-  })
+  ipcMain.handle(CH.appConfigSet, (_e, patch: Partial<AppConfig>): AppConfig => patchConfig(patch))
 
   ipcMain.handle(CH.appPickDirectory, async (_e, opts) => {
     const win = getWindow()
@@ -197,7 +192,6 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       closeVault()
       const vault = await Vault.create(dir, password)
       setVault(vault)
-      touchRecentVault(dir, basename(dir))
       heartbeat()
       const result: OpenResult = { ok: true, state: buildState(), nodes: vault.list() }
       return ok(result)
@@ -219,7 +213,6 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       closeVault()
       const vault = await Vault.open(dir, password)
       setVault(vault)
-      touchRecentVault(dir, basename(dir))
       heartbeat()
       return ok({ ok: true as const, state: buildState(), nodes: vault.list() })
     } catch (err) {
@@ -263,10 +256,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     }
   })
 
-  ipcMain.handle(CH.vaultRemove, (_e, id: string) => {
+  ipcMain.handle(CH.vaultRemove, (_e, ids: string | string[]) => {
     try {
       const vault = requireVault()
-      const count = vault.deleteNode(id)
+      const list = Array.isArray(ids) ? ids : [ids]
+      if (list.some((id) => typeof id !== 'string')) {
+        throw new VaultError('参数不合法', 'BAD_ARG')
+      }
+      let count = 0
+      for (const id of list) count += vault.deleteNode(id)
       heartbeat()
       return ok(count)
     } catch (err) {
@@ -291,6 +289,65 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     const kw = String(keyword ?? '').trim().toLowerCase()
     if (!kw) return []
     return vault.list().filter((n) => n.name.toLowerCase().includes(kw))
+  })
+
+  /**
+   * 全文检索：只在解锁状态下、按需解密文本类文件。
+   * 不做持久化索引 —— 任何落盘的索引都是明文泄露面，且会与密文内容脱节。
+   * 每个文件限制在 1MB / 16 万字符内，超大的文本文件跳过（防卡死）。
+   */
+  const TEXT_SEARCH_EXTS = new Set(['txt', 'log', 'csv', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'md', 'markdown', 'mdown', 'html', 'htm', 'js', 'ts', 'css', 'py', 'sh', 'bat', 'sql', 'srt'])
+  const MAX_CONTENT_SEARCH_BYTES = 1024 * 1024
+  const MAX_CONTENT_SEARCH_FILES = 2000
+
+  ipcMain.handle(CH.vaultSearchContent, (_e, keyword: string): Result<ContentMatch[]> => {
+    try {
+      const vault = requireVault()
+      const kw = String(keyword ?? '').trim()
+      if (!kw) return ok([])
+      const kwLower = kw.toLowerCase()
+
+      const files = vault
+        .list()
+        .filter((n) => n.type === 'file' && n.ext && TEXT_SEARCH_EXTS.has(n.ext.toLowerCase()))
+        .slice(0, MAX_CONTENT_SEARCH_FILES)
+
+      const matches: ContentMatch[] = []
+      for (const file of files) {
+        if ((file.size ?? 0) > MAX_CONTENT_SEARCH_BYTES) continue
+        let content: Buffer | null = null
+        try {
+          content = vault.readFile(file.id)
+          const text = content.toString('utf8')
+          const lower = text.toLowerCase()
+          const idx = lower.indexOf(kwLower)
+          if (idx < 0) continue
+          // 统计命中数（封顶 99 防止极端文本拖慢）
+          let hits = 0
+          let pos = idx
+          while (pos >= 0 && hits < 99) {
+            hits++
+            pos = lower.indexOf(kwLower, pos + kwLower.length)
+          }
+          const start = Math.max(0, idx - 24)
+          const snippet = text.slice(start, Math.min(text.length, idx + kw.length + 48)).replace(/\s+/g, ' ')
+          matches.push({
+            id: file.id,
+            name: file.name,
+            snippet: start > 0 ? '…' + snippet : snippet,
+            hits,
+          })
+        } catch {
+          // 单个文件损坏不影响整体搜索
+        } finally {
+          if (content) wipe(content)
+        }
+      }
+      heartbeat()
+      return ok(matches)
+    } catch (err) {
+      return fail(err)
+    }
   })
 
   // ------------------------------------------------------------ 导入导出

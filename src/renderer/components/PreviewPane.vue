@@ -6,6 +6,9 @@ import { useVault } from '../composables/useVault'
 import { formatSize, formatTime, previewKind, PREVIEW_LABEL } from '../utils/format'
 import { pathOf } from '../utils/tree'
 import PdfPreview from './PdfPreview.vue'
+import DocxPreview from './DocxPreview.vue'
+import SheetPreview from './SheetPreview.vue'
+import PptxPreview from './PptxPreview.vue'
 
 const { state } = useVault()
 
@@ -123,7 +126,7 @@ onUnmounted(revoke)
     <div v-if="!node" class="center muted">
       <div class="big">📄</div>
       <p>在左侧选择一个文件查看内容</p>
-      <p class="sub">支持 PDF / TXT / Markdown / 图片 / 音频，Office 文档可导出后打开</p>
+      <p class="sub">支持 PDF / Word / Excel / PPT / TXT / Markdown / 图片 / 音频</p>
     </div>
 
     <div v-else-if="node.type === 'folder'" class="center muted">
@@ -161,12 +164,29 @@ onUnmounted(revoke)
         :name="node.name"
       />
 
+      <DocxPreview
+        v-else-if="kind === 'docx' && data"
+        :data="data"
+        :name="node.name"
+      />
+
+      <SheetPreview
+        v-else-if="kind === 'sheet' && data"
+        :data="data"
+        :name="node.name"
+      />
+
+      <PptxPreview
+        v-else-if="kind === 'slides' && data"
+        :data="data"
+        :name="node.name"
+      />
+
       <div v-else-if="kind === 'office'" class="center">
         <div class="big">📊</div>
         <p class="name">{{ node.name }}</p>
         <p class="sub">
-          {{ PREVIEW_LABEL.office }}预览将在下一版本接入本地渲染引擎，<br />当前可先导出后用 Office /
-          WPS 打开
+          旧版 Office 格式（doc / xls / ppt）暂不支持预览，<br />可导出后用 Office / WPS 打开
         </p>
       </div>
 
@@ -199,7 +219,7 @@ onUnmounted(revoke)
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--panel);
 }
 
 .bar {
@@ -242,8 +262,8 @@ onUnmounted(revoke)
   flex: 0 0 auto;
   font-size: 11px;
   color: var(--ok);
-  background: #eefaf1;
-  border: 1px solid #cdeed8;
+  background: var(--ok-soft);
+  border: 1px solid var(--ok-line);
   border-radius: 10px;
   padding: 1px 8px;
 }
@@ -300,7 +320,7 @@ onUnmounted(revoke)
 
 .imgwrap {
   padding: 16px;
-  background: #fafbfd;
+  background: var(--panel-3);
 }
 
 .imgwrap img {
@@ -308,7 +328,7 @@ onUnmounted(revoke)
   max-height: 100%;
   object-fit: contain;
   border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(20, 26, 40, 0.12);
+  box-shadow: 0 2px 12px var(--dropdown-shadow);
 }
 
 .player {
@@ -364,7 +384,7 @@ onUnmounted(revoke)
 }
 
 .markdown :deep(pre) {
-  background: #f7f8fb;
+  background: var(--panel-3);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 11px 13px;

@@ -11,6 +11,23 @@ const toast = useToast()
 const version = ref('')
 const tab = ref<'general' | 'password'>('general')
 
+const theme = computed(() => state.config?.theme ?? 'light')
+const fontScale = computed(() => state.config?.fontScale ?? 1)
+const FONT_SCALES = [
+  { value: 0.85, label: '小' },
+  { value: 1, label: '标准' },
+  { value: 1.15, label: '大' },
+  { value: 1.3, label: '特大' },
+]
+
+function setTheme(t: 'light' | 'dark') {
+  void patchConfig({ theme: t })
+}
+
+function setFontScale(s: number) {
+  void patchConfig({ fontScale: s })
+}
+
 const oldPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -81,6 +98,28 @@ if (model.value) void loadVersion()
 
       <div v-if="tab === 'general'" class="body">
         <div class="row">
+          <label>主题</label>
+          <div class="seg">
+            <button :class="{ on: theme === 'light' }" @click="setTheme('light')">☀️ 亮色</button>
+            <button :class="{ on: theme === 'dark' }" @click="setTheme('dark')">🌙 暗色</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <label>字体大小</label>
+          <div class="seg">
+            <button
+              v-for="s in FONT_SCALES"
+              :key="s.value"
+              :class="{ on: fontScale === s.value }"
+              @click="setFontScale(s.value)"
+            >
+              {{ s.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="row">
           <label>自动锁屏</label>
           <select
             class="input sel"
@@ -104,17 +143,6 @@ if (model.value) void loadVersion()
             "
           />
           <span>系统休眠或睡眠时自动锁定</span>
-        </label>
-
-        <label class="row check">
-          <input
-            type="checkbox"
-            :checked="state.config?.rememberRecentVaults ?? true"
-            @change="
-              patchConfig({ rememberRecentVaults: ($event.target as HTMLInputElement).checked })
-            "
-          />
-          <span>记住最近打开的文件库（仅保存路径，不保存密码）</span>
         </label>
 
         <div class="divider" />
@@ -195,9 +223,9 @@ if (model.value) void loadVersion()
   max-height: 84%;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--panel);
   border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(20, 26, 40, 0.24);
+  box-shadow: 0 24px 60px var(--dropdown-shadow);
   overflow: hidden;
 }
 
@@ -265,6 +293,32 @@ if (model.value) void loadVersion()
 .sel {
   width: 150px;
   height: 30px;
+  background: var(--panel);
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.seg button:last-child {
+  border-right: none;
+}
+
+.seg button.on {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-weight: 500;
 }
 
 .field {
@@ -310,7 +364,7 @@ if (model.value) void loadVersion()
   font-size: 11.5px;
   color: var(--faint);
   line-height: 1.8;
-  background: #fafbfd;
+  background: var(--panel-3);
   border: 1px solid var(--line-soft);
   border-radius: 7px;
   padding: 9px 11px;

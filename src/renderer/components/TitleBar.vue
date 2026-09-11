@@ -43,7 +43,7 @@ function close() {
   align-items: center;
   padding-left: 12px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(#fbfbfd, #f4f5f8);
+  background: var(--panel-2);
   user-select: none;
 }
 
@@ -108,7 +108,7 @@ function close() {
 }
 
 .wbtn:hover {
-  background: #e6e9f0;
+  background: var(--hover);
 }
 
 .wbtn.close:hover {
@@ -159,7 +159,7 @@ function close() {
   width: 8px;
   height: 7px;
   border: 1px solid currentColor;
-  background: #f7f8fa;
+  background: var(--panel-2);
 }
 
 .i-close::before,

@@ -20,6 +20,7 @@ export const CH = {
   vaultRemove: 'vault:remove',
   vaultMove: 'vault:move',
   vaultSearch: 'vault:search',
+  vaultSearchContent: 'vault:search:content',
   vaultImport: 'vault:import',
   vaultExport: 'vault:export',
   vaultReadFile: 'vault:read',
@@ -37,18 +38,15 @@ export const CH = {
 
 // ---------------------------------------------------------------- 配置
 
-export interface RecentVault {
-  path: string
-  name: string
-  lastOpened: number
-}
+export type ThemeMode = 'light' | 'dark'
 
 export interface AppConfig {
   /** 0 表示从不自动锁定 */
   autoLockMinutes: number
   lockOnSuspend: boolean
-  rememberRecentVaults: boolean
-  recentVaults: RecentVault[]
+  theme: ThemeMode
+  /** 界面字体缩放，1 为默认。0.85 / 1 / 1.15 / 1.3 */
+  fontScale: number
 }
 
 // ---------------------------------------------------------------- 请求/响应
@@ -86,6 +84,14 @@ export interface ImportResult {
 export interface ExportResult {
   exported: number
   destDir: string
+}
+
+export interface ContentMatch {
+  id: string
+  name: string
+  /** 命中上下文片段（已脱敏为纯文本） */
+  snippet: string
+  hits: number
 }
 
 /** 统一的结果包装。ok=false 时 error 一定是用户可读的中文提示。 */
@@ -126,9 +132,12 @@ export interface VaultBridge {
   list(): Promise<NodeView[]>
   createFolder(parentId: string | null, name: string): Promise<Result<NodeView>>
   rename(id: string, name: string): Promise<Result<null>>
-  remove(id: string): Promise<Result<number>>
+  /** 单个或批量删除，返回删除的节点总数 */
+  remove(ids: string | string[]): Promise<Result<number>>
   move(id: string, parentId: string | null): Promise<Result<null>>
   search(keyword: string): Promise<NodeView[]>
+  /** 全文检索文本类文件内容，仅解锁状态下可用 */
+  searchContent(keyword: string): Promise<Result<ContentMatch[]>>
   importPaths(parentId: string | null, paths: string[]): Promise<Result<ImportResult>>
   exportNodes(ids: string[]): Promise<Result<ExportResult>>
   readFile(id: string): Promise<Result<Uint8Array>>

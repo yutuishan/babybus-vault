@@ -29,7 +29,10 @@ const MARKDOWN = ['md', 'markdown', 'mdown']
 const AUDIO = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma']
 const VIDEO = ['mp4', 'mov', 'mkv', 'avi', 'webm']
 const PDF = ['pdf']
-const OFFICE = ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'odt', 'ods', 'odp']
+const DOCX = ['docx']
+const SHEET = ['xlsx']
+const SLIDES = ['pptx']
+const OFFICE = ['doc', 'xls', 'ppt', 'odt', 'ods', 'odp']
 
 export type PreviewKind =
   | 'image'
@@ -38,6 +41,9 @@ export type PreviewKind =
   | 'audio'
   | 'video'
   | 'pdf'
+  | 'docx'
+  | 'sheet'
+  | 'slides'
   | 'office'
   | 'unknown'
 
@@ -49,6 +55,9 @@ export function previewKind(ext: string | undefined): PreviewKind {
   if (AUDIO.includes(e)) return 'audio'
   if (VIDEO.includes(e)) return 'video'
   if (PDF.includes(e)) return 'pdf'
+  if (DOCX.includes(e)) return 'docx'
+  if (SHEET.includes(e)) return 'sheet'
+  if (SLIDES.includes(e)) return 'slides'
   if (OFFICE.includes(e)) return 'office'
   return 'unknown'
 }
@@ -60,6 +69,9 @@ export const PREVIEW_LABEL: Record<PreviewKind, string> = {
   audio: '音频',
   video: '视频',
   pdf: 'PDF',
-  office: '文档',
+  docx: 'Word',
+  sheet: 'Excel',
+  slides: 'PPT',
+  office: '旧版 Office',
   unknown: '文件',
 }

@@ -17,8 +17,8 @@ const CONFIG_NAME = 'config.json'
 export const DEFAULT_CONFIG: AppConfig = {
   autoLockMinutes: 5,
   lockOnSuspend: true,
-  rememberRecentVaults: true,
-  recentVaults: [],
+  theme: 'light',
+  fontScale: 1,
 }
 
 /** 程序所在目录。开发环境用 cwd，打包后用 exe 所在目录 */
@@ -62,11 +62,10 @@ export function loadConfig(): AppConfig {
   if (!existsSync(file)) return { ...DEFAULT_CONFIG }
   try {
     const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<AppConfig>
-    return {
-      ...DEFAULT_CONFIG,
-      ...raw,
-      recentVaults: Array.isArray(raw.recentVaults) ? raw.recentVaults : [],
-    }
+    const cfg = { ...DEFAULT_CONFIG, ...raw }
+    if (cfg.theme !== 'dark') cfg.theme = 'light'
+    if (typeof cfg.fontScale !== 'number' || !Number.isFinite(cfg.fontScale)) cfg.fontScale = 1
+    return cfg
   } catch {
     // 配置文件损坏不能让应用起不来，直接用默认值
     return { ...DEFAULT_CONFIG }
@@ -85,20 +84,4 @@ export function saveConfig(config: AppConfig): AppConfig {
 
 export function patchConfig(patch: Partial<AppConfig>): AppConfig {
   return saveConfig({ ...loadConfig(), ...patch })
-}
-
-const MAX_RECENT = 10
-
-/** 记录最近打开的文件库。用户关掉「记住最近的文件库」时传 null 清空 */
-export function touchRecentVault(path: string, name: string): AppConfig {
-  const config = loadConfig()
-  if (!config.rememberRecentVaults) return config
-  const rest = config.recentVaults.filter((v) => v.path !== path)
-  rest.unshift({ path, name, lastOpened: Date.now() })
-  return saveConfig({ ...config, recentVaults: rest.slice(0, MAX_RECENT) })
-}
-
-export function forgetRecentVault(path: string): AppConfig {
-  const config = loadConfig()
-  return saveConfig({ ...config, recentVaults: config.recentVaults.filter((v) => v.path !== path) })
 }

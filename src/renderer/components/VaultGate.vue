@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useVault } from '../composables/useVault'
 import { useToast } from '../composables/useToast'
-import { formatTime } from '../utils/format'
 
-const { state, pickForCreate, pickForOpen, openRecent, patchConfig } = useVault()
+const { pickForCreate, pickForOpen } = useVault()
 const toast = useToast()
-
-const recents = computed(() => state.config?.recentVaults ?? [])
 
 async function onCreate() {
   const res = await pickForCreate()
@@ -21,18 +17,6 @@ async function onOpen() {
   if (res.status === 'not-vault') {
     toast.warn('该目录不是加密文件库（未找到 vault.meta）。请选择文件库文件夹，或在此新建。')
   }
-}
-
-async function onRecent(dir: string) {
-  const res = await openRecent(dir)
-  if (res.status === 'not-vault') {
-    toast.warn('文件库已不在原位置（可能被移动或 U 盘已拔出）。请重新选择位置。')
-  }
-}
-
-async function forget(dir: string) {
-  const rest = (state.config?.recentVaults ?? []).filter((v) => v.path !== dir)
-  await patchConfig({ recentVaults: rest })
 }
 </script>
 
@@ -66,18 +50,6 @@ async function forget(dir: string) {
       </button>
     </div>
 
-    <div v-if="recents.length" class="recent">
-      <div class="recent-head">最近打开</div>
-      <div v-for="v in recents" :key="v.path" class="recent-item">
-        <button class="recent-main" @click="onRecent(v.path)">
-          <span class="rname">{{ v.name }}</span>
-          <span class="rpath">{{ v.path }}</span>
-          <span class="rtime">{{ formatTime(v.lastOpened) }}</span>
-        </button>
-        <button class="remove" title="从列表移除" @click="forget(v.path)">×</button>
-      </div>
-    </div>
-
     <div class="foot">
       <span>软件不会自动创建文件库，位置始终由你指定</span>
       <span class="dot">·</span>
@@ -90,11 +62,12 @@ async function forget(dir: string) {
 .gate {
   height: 100%;
   overflow-y: auto;
-  background: #fbfcfe;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 46px 24px 24px;
+  justify-content: center; /* 上下居中 */
+  padding: 24px;
 }
 
 .brand {
@@ -141,7 +114,7 @@ async function forget(dir: string) {
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--panel);
   text-align: left;
   transition: 0.18s;
 }
@@ -188,7 +161,7 @@ async function forget(dir: string) {
   width: 480px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--panel);
   overflow: hidden;
 }
 
@@ -196,7 +169,7 @@ async function forget(dir: string) {
   padding: 9px 13px;
   font-size: 12px;
   color: var(--muted);
-  background: #fafbfd;
+  background: var(--panel-3);
   border-bottom: 1px solid var(--line-soft);
 }
 

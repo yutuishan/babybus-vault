@@ -1,6 +1,9 @@
 :root {
   --bg: #eef0f4;
   --win: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #fbfcfd;
+  --panel-3: #fafbfd;
   --line: #e4e7ee;
   --line-soft: #eef0f5;
   --text: #1f2430;
@@ -14,6 +17,39 @@
   --danger: #dc2626;
   --hover: #f5f6fa;
   --radius: 8px;
+  --stage: #f4f6f9;
+  --ok-soft: #eefaf1;
+  --ok-line: #cdeed8;
+  --danger-soft: #fdf1f1;
+  --danger-line: #f2c9c9;
+  --dropdown-shadow: rgba(20, 26, 40, 0.18);
+}
+
+/* 暗色主题：只覆盖变量，组件里一律用变量，禁止写死白色 */
+[data-theme='dark'] {
+  --bg: #17191f;
+  --win: #1d2027;
+  --panel: #1d2027;
+  --panel-2: #1f232b;
+  --panel-3: #1a1e25;
+  --line: #333844;
+  --line-soft: #2a2f3a;
+  --text: #d6d9e0;
+  --muted: #9aa1ad;
+  --faint: #767d8a;
+  --accent: #5b85f7;
+  --accent-dark: #6f94ff;
+  --accent-soft: #26304a;
+  --ok: #34b36b;
+  --warn: #e0a04a;
+  --danger: #e05252;
+  --hover: #262a33;
+  --stage: #14161b;
+  --ok-soft: #1c2e24;
+  --ok-line: #2b4a3a;
+  --danger-soft: #34201f;
+  --danger-line: #54302f;
+  --dropdown-shadow: rgba(0, 0, 0, 0.5);
 }
 
 * {
@@ -46,9 +82,19 @@ button {
   cursor: pointer;
 }
 
-input {
+input,
+select {
   font: inherit;
   color: inherit;
+}
+
+select option {
+  color: #1f2430;
+}
+
+/* 界面字体缩放：设置里改 --font-scale，整体等比缩放 */
+#app {
+  zoom: var(--font-scale, 1);
 }
 
 /* ---------------- 通用控件 ---------------- */
@@ -58,7 +104,7 @@ input {
   padding: 0 14px;
   border-radius: 6px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
   color: var(--text);
   display: inline-flex;
   align-items: center;
@@ -94,7 +140,7 @@ input {
 }
 
 .btn.danger:hover:not(:disabled) {
-  background: #fdf1f1;
+  background: var(--danger-soft);
 }
 
 .btn.ghost {
@@ -113,7 +159,8 @@ input {
   padding: 0 11px;
   border-radius: 6px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
+  color: var(--text);
   width: 100%;
   outline: none;
   transition: 0.15s;
@@ -149,7 +196,7 @@ input {
 .card {
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--panel);
 }
 
 /* 滚动条 */
@@ -159,14 +206,14 @@ input {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d3d8e2;
+  background: var(--line);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #b9c0cd;
+  background: var(--faint);
   background-clip: content-box;
 }
 

@@ -27,6 +27,11 @@ async function switchVault() {
   password.value = ''
   await closeVault()
 }
+
+/** 锁定时密钥已清空，直接退出不损失任何保护 */
+function quitApp() {
+  void window.api.windowClose()
+}
 </script>
 
 <template>
@@ -52,7 +57,11 @@ async function switchVault() {
         {{ state.busy ? '正在派生密钥…' : '解锁' }}
       </button>
 
-      <button class="link" @click="switchVault">切换其它文件库</button>
+      <div class="links">
+        <button class="link" @click="switchVault">切换其它文件库</button>
+        <span class="sep">·</span>
+        <button class="link quit" @click="quitApp">退出程序</button>
+      </div>
     </div>
   </div>
 </template>
@@ -62,7 +71,7 @@ async function switchVault() {
   position: absolute;
   inset: 0;
   z-index: 40;
-  background: rgba(238, 240, 244, 0.94);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
@@ -73,8 +82,8 @@ async function switchVault() {
   width: 340px;
   padding: 28px 26px;
   border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 20px 50px rgba(20, 26, 40, 0.16);
+  background: var(--panel);
+  box-shadow: 0 20px 50px var(--dropdown-shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -119,5 +128,20 @@ h3 {
 
 .link:hover {
   color: var(--accent);
+}
+
+.link.quit:hover {
+  color: var(--danger);
+}
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.links .sep {
+  color: var(--faint);
+  opacity: 0.5;
 }
 </style>

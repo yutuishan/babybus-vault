@@ -3,7 +3,7 @@
  * 引入状态管理库只会增加体积和攻击面。
  */
 import { computed, reactive } from 'vue'
-import type { AppConfig, VaultState } from '@shared/ipc'
+import type { AppConfig, ContentMatch, VaultState } from '@shared/ipc'
 import type { NodeView } from '@shared/types'
 
 export type Phase = 'gate' | 'setup' | 'unlock' | 'main'
@@ -36,12 +36,23 @@ const state = reactive({
   lockReason: '' as string,
   busy: false,
   selectedId: null as string | null,
+  /** 多选集合（Ctrl/Shift 点击累积）。selectedId 始终是最后点击的节点 */
+  selectedIds: new Set<string>() as Set<string>,
   expanded: new Set<string>() as Set<string>,
   search: '' as string,
+  /** 全文搜索结果（文件内容命中） */
+  contentMatches: [] as ContentMatch[],
+  contentSearching: false,
   countdown: Number.POSITIVE_INFINITY as number,
   config: null as AppConfig | null,
   maximized: false,
 })
+
+/** 主题与字体缩放应用在根元素上，所有组件只认变量 */
+function applyAppearance(cfg: AppConfig): void {
+  document.documentElement.dataset.theme = cfg.theme === 'dark' ? 'dark' : 'light'
+  document.documentElement.style.setProperty('--font-scale', String(cfg.fontScale ?? 1))
+}
 
 function setNodes(nodes: NodeView[]) {
   state.nodes = nodes
@@ -55,17 +66,21 @@ function applyOpened(dir: string, v: VaultState, nodes: NodeView[]) {
   state.lockReason = ''
   state.phase = 'main'
   state.selectedId = null
+  state.selectedIds.clear()
   state.search = ''
+  state.contentMatches = []
 }
 
 export function useVault() {
   async function loadConfig(): Promise<AppConfig> {
     state.config = await window.api.configGet()
+    applyAppearance(state.config)
     return state.config
   }
 
   async function patchConfig(patch: Partial<AppConfig>): Promise<void> {
     state.config = await window.api.configSet(patch)
+    applyAppearance(state.config)
   }
 
   /** 新建：选目录。若该目录已是文件库，直接拦下并提示改用「打开」 */
@@ -91,15 +106,6 @@ export function useVault() {
     state.dir = dir
     state.phase = 'unlock'
     return true
-  }
-
-  /** 从最近列表直接进入 */
-  async function openRecent(dir: string): Promise<'ok' | 'missing'> {
-    const probe = await window.api.probe(dir)
-    if (!probe.isVault) return 'missing'
-    state.dir = dir
-    state.phase = 'unlock'
-    return 'ok'
   }
 
   async function createVault(password: string): Promise<string | null> {
@@ -138,6 +144,8 @@ export function useVault() {
     state.nodes = []
     state.vault = { ...emptyState }
     state.selectedId = null
+    state.selectedIds.clear()
+    state.contentMatches = []
     window.api.heartbeat()
   }
 
@@ -153,6 +161,8 @@ export function useVault() {
     state.nodes = []
     state.vault = { ...emptyState }
     state.selectedId = null
+    state.selectedIds.clear()
+    state.contentMatches = []
   }
 
   /** 回到文件库选择界面（不锁定，先锁后切） */
@@ -164,6 +174,8 @@ export function useVault() {
     state.nodes = []
     state.vault = { ...emptyState }
     state.selectedId = null
+    state.selectedIds.clear()
+    state.contentMatches = []
   }
 
   async function createFolder(parentId: string | null, name: string): Promise<string | null> {
@@ -181,12 +193,34 @@ export function useVault() {
     return null
   }
 
-  async function remove(id: string): Promise<string | null> {
-    const res = await window.api.remove(id)
+  async function remove(ids: string[]): Promise<string | null> {
+    if (!ids.length) return null
+    const res = await window.api.remove(ids)
     if (!res.ok) return res.error
-    if (state.selectedId === id) state.selectedId = null
+    for (const id of ids) {
+      if (state.selectedId === id) state.selectedId = null
+      state.selectedIds.delete(id)
+    }
     await refresh()
     return null
+  }
+
+  /** 全文检索：搜索文本类文件的内容。失败返回错误文案 */
+  async function searchContent(keyword: string): Promise<string | null> {
+    const kw = keyword.trim()
+    if (!kw) {
+      state.contentMatches = []
+      return null
+    }
+    state.contentSearching = true
+    try {
+      const res = await window.api.searchContent(kw)
+      if (!res.ok) return res.error
+      state.contentMatches = res.data
+      return null
+    } finally {
+      state.contentSearching = false
+    }
   }
 
   async function move(id: string, parentId: string | null): Promise<string | null> {
@@ -225,7 +259,6 @@ export function useVault() {
     patchConfig,
     pickForCreate,
     pickForOpen,
-    openRecent,
     createVault,
     openVault,
     lock,
@@ -236,6 +269,7 @@ export function useVault() {
     rename,
     remove,
     move,
+    searchContent,
     importPaths,
     exportNodes,
   }
