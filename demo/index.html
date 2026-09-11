@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>宝宝巴士 · 功能演示</title>
+<style>
+:root{
+  --bg:#eef0f4;
+  --win:#ffffff;
+  --line:#e4e7ee;
+  --line-soft:#eef0f5;
+  --text:#1f2430;
+  --muted:#6f7683;
+  --faint:#9aa1ad;
+  --accent:#3b6ef5;
+  --accent-soft:#eaf0ff;
+  --ok:#16a34a;
+  --warn:#d97706;
+  --danger:#dc2626;
+  --shadow:0 24px 60px rgba(24,31,48,.18), 0 2px 8px rgba(24,31,48,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;padding:24px;
+  -webkit-font-smoothing:antialiased;
+}
+
+.stage{width:100%;max-width:1180px;display:flex;flex-direction:column;align-items:center;gap:18px}
+
+/* ---------- window ---------- */
+.win{
+  width:100%;height:660px;background:var(--win);
+  border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;overflow:hidden;position:relative;
+  border:1px solid rgba(0,0,0,.06);
+}
+.titlebar{
+  height:40px;flex:0 0 40px;display:flex;align-items:center;
+  padding:0 14px;border-bottom:1px solid var(--line);
+  background:linear-gradient(#fbfbfd,#f4f5f8);
+}
+.dots{display:flex;gap:7px;width:70px}
+.dot{width:11px;height:11px;border-radius:50%;display:block}
+.dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+.titlebar .title{flex:1;text-align:center;font-size:13px;color:var(--muted);font-weight:500}
+.tb-right{width:70px;display:flex;justify-content:flex-end;gap:10px;color:var(--faint)}
+.tb-right svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6}
+
+.win-body{flex:1;position:relative;overflow:hidden}
+.scene{position:absolute;inset:0;display:none;flex-direction:column}
+.scene.active{display:flex;animation:fade .32s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- scene: gate ---------- */
+.gate{align-items:center;justify-content:center;gap:0;background:#fbfcfe}
+.brand{display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:34px}
+.logo{
+  width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,#3b6ef5,#6a8cff);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:600;
+  box-shadow:0 8px 20px rgba(59,110,245,.28);
+}
+.brand h1{font-size:21px;font-weight:600;letter-spacing:.5px}
+.brand p{font-size:13px;color:var(--muted)}
+
+.cards{display:flex;gap:16px;margin-bottom:26px}
+.card{
+  width:210px;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff;
+  cursor:pointer;transition:.2s;text-align:left;
+}
+.card:hover{border-color:var(--accent);box-shadow:0 6px 18px rgba(59,110,245,.12);transform:translateY(-2px)}
+.card .ico{width:36px;height:36px;border-radius:9px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+.card .ico svg{width:19px;height:19px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.card h3{font-size:14px;font-weight:600;margin-bottom:5px}
+.card p{font-size:12px;color:var(--muted);line-height:1.6}
+
+.recent{width:440px}
+.recent h4{font-size:12px;color:var(--faint);font-weight:500;margin-bottom:8px;letter-spacing:.4px}
+.recent-box{border:1px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--faint);font-size:12px;background:#fff}
+.hint{max-width:520px;text-align:center;font-size:12px;color:var(--muted);line-height:1.8;margin-top:26px;background:#fff8e6;border:1px solid #f3e2b8;border-radius:9px;padding:11px 16px;color:#8a6d1f}
+
+/* ---------- scene: create ---------- */
+.create{align-items:center;justify-content:center;gap:18px;background:#fbfcfe}
+.dlg{width:430px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(24,31,48,.12);overflow:hidden}
+.dlg-head{padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:14px;font-weight:600}
+.dlg-body{padding:20px 18px;display:flex;flex-direction:column;gap:15px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.pathbox{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;background:#fafbfd}
+.pathbox svg{width:15px;height:15px;stroke:var(--accent);fill:none;stroke-width:1.7;flex:0 0 15px}
+.pathbox span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pathbox button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;color:var(--muted);cursor:pointer}
+.pwbox{position:relative}
+.pwbox input{
+  width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px;
+  letter-spacing:3px;outline:none;font-family:inherit;background:#fafbfd;
+}
+.pwbox input:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(59,110,245,.1)}
+.rules{display:flex;flex-direction:column;gap:6px;margin-top:-4px}
+.rule{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--faint);transition:.25s}
+.rule .mk{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;flex:0 0 14px;transition:.25s}
+.rule .mk svg{width:8px;height:8px;stroke:#fff;fill:none;stroke-width:3;opacity:0}
+.rule.pass{color:var(--ok)}
+.rule.pass .mk{background:var(--ok);border-color:var(--ok)}
+.rule.pass .mk svg{opacity:1}
+.dlg-foot{padding:13px 18px;border-top:1px solid var(--line-soft);display:flex;justify-content:flex-end;gap:10px;background:#fafbfd}
+.btn{border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-family:inherit;cursor:pointer;transition:.2s}
+.btn.ghost{background:#fff;border:1px solid var(--line);color:var(--muted)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:disabled{background:#c3d0f2;cursor:not-allowed}
+.btn.primary:not(:disabled):hover{background:#2f5fe0}
+
+/* ---------- scene: derive ---------- */
+.derive{align-items:center;justify-content:center;gap:20px;background:#fbfcfe}
+.spin{width:46px;height:46px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .9s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.derive h2{font-size:15px;font-weight:600}
+.derive p{font-size:12px;color:var(--muted);font-family:ui-monospace,Consolas,monospace}
+.derive .ok{color:var(--ok);font-size:34px;opacity:0;transform:scale(.6);transition:.35s}
+.derive .ok.show{opacity:1;transform:scale(1)}
+
+/* ---------- scene: main ---------- */
+.toolbar{
+  height:44px;flex:0 0 44px;display:flex;align-items:center;gap:4px;padding:0 12px;
+  border-bottom:1px solid var(--line);background:#fbfbfd;
+}
+.tb{display:flex;align-items:center;gap:6px;border:none;background:transparent;border-radius:7px;padding:6px 11px;font-size:12.5px;color:var(--text);cursor:pointer;font-family:inherit;transition:.15s}
+.tb:hover{background:#eceff5}
+.tb.hl{background:var(--accent);color:#fff}
+.tb svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tb-sep{width:1px;height:18px;background:var(--line);margin:0 6px}
+.tb-spacer{flex:1}
+.lockchip{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.lockchip.warn{color:var(--warn)}
+.lockchip.crit{color:var(--danger)}
+
+.main{flex:1;display:flex;min-height:0}
+.side{
+  width:266px;flex:0 0 266px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#fcfcfe;
+}
+.search{padding:9px;border-bottom:1px solid var(--line-soft);position:relative}
+.search input{
+  width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 10px 7px 29px;font-size:12.5px;
+  outline:none;font-family:inherit;background:#fff;
+}
+.search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,110,245,.09)}
+.search svg{position:absolute;left:18px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--faint);fill:none;stroke-width:2}
+.tree{flex:1;overflow:auto;padding:8px 6px}
+.node{
+  display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;font-size:12.5px;
+  cursor:pointer;color:var(--text);user-select:none;transition:.12s;
+}
+.node:hover{background:#eef1f7}
+.node.sel{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.node .ic{width:15px;height:15px;flex:0 0 15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.node.folder .ic{color:#f0a92c}
+.node.file .ic{color:#7b8493}
+.node .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node .sz{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.node.hidden{display:none}
+.node.new{animation:pop .45s ease}
+@keyframes pop{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+
+.preview{flex:1;display:flex;flex-direction:column;min-width:0;background:#fff}
+.pv-head{
+  height:38px;flex:0 0 38px;display:flex;align-items:center;gap:9px;padding:0 14px;
+  border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--muted);
+}
+.pv-head .tag{background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:2px 7px;font-size:11px;font-weight:500}
+.pv-head .lock{display:flex;align-items:center;gap:5px;margin-left:auto;color:var(--ok);font-size:11.5px}
+.pv-head .lock svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+.pv-body{flex:1;overflow:auto;padding:22px 26px}
+.empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint)}
+.empty svg{width:42px;height:42px;stroke:#d3d8e0;fill:none;stroke-width:1.4}
+.empty p{font-size:12.5px}
+
+.doc{max-width:620px;margin:0 auto;line-height:1.85;font-size:13.5px;color:#2b3240}
+.doc h2{font-size:19px;margin-bottom:6px;color:#111827}
+.doc .meta{font-size:11.5px;color:var(--faint);margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid var(--line-soft)}
+.doc p{margin-bottom:13px;text-indent:2em}
+.doc ol{margin:10px 0 14px 22px}
+.doc ol li{margin-bottom:6px}
+.sheet{font-size:12.5px;border-collapse:collapse;width:100%;max-width:640px;margin:0 auto}
+.sheet th,.sheet td{border:1px solid var(--line);padding:7px 11px;text-align:left}
+.sheet th{background:#f6f8fc;font-weight:600;font-size:12px}
+.sheet td.num{text-align:right;font-variant-numeric:tabular-nums;color:#334}
+.sheet tr.total td{background:#f6f8fc;font-weight:600}
+.md{max-width:620px;margin:0 auto;line-height:1.8;font-size:13.5px}
+.md h1{font-size:20px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line-soft)}
+.md h3{font-size:14.5px;margin:16px 0 7px}
+.md code{background:#f2f4f8;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,Consolas,monospace}
+.md ul{margin:8px 0 8px 20px}
+.md blockquote{border-left:3px solid var(--accent);background:#f7f9ff;padding:8px 14px;margin:12px 0;color:#4a5364;font-size:12.5px}
+.shot{max-width:520px;margin:0 auto;border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 6px 18px rgba(24,31,48,.08)}
+.shot svg{display:block;width:100%}
+
+.status{
+  height:26px;flex:0 0 26px;display:flex;align-items:center;gap:14px;padding:0 14px;
+  border-top:1px solid var(--line);background:#fbfbfd;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+.status .sep{width:1px;height:11px;background:var(--line)}
+.status .grow{flex:1}
+.status b{color:var(--text);font-weight:500}
+
+/* ---------- drop overlay ---------- */
+.drop{position:absolute;inset:0;background:rgba(59,110,245,.07);border:2px dashed var(--accent);
+  display:none;align-items:center;justify-content:center;flex-direction:column;gap:9px;z-index:30;border-radius:0}
+.drop.show{display:flex}
+.drop .big{width:44px;height:44px;stroke:var(--accent);fill:none;stroke-width:1.5}
+.drop p{font-size:14px;color:var(--accent);font-weight:500}
+.drop small{font-size:12px;color:var(--muted)}
+
+.cardfile{
+  position:absolute;z-index:40;background:#fff;border:1px solid var(--line);border-radius:8px;
+  padding:9px 13px;font-size:12.5px;box-shadow:0 10px 26px rgba(24,31,48,.16);
+  display:flex;align-items:center;gap:8px;pointer-events:none;transition:transform .5s cubic-bezier(.4,0,.2,1);
+}
+.cardfile svg{width:15px;height:15px;stroke:#7b8493;fill:none;stroke-width:1.7}
+
+/* ---------- lock overlay ---------- */
+.lockmask{
+  position:absolute;inset:0;z-index:50;background:rgba(238,240,244,.94);backdrop-filter:blur(6px);
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+}
+.lockmask.show{display:flex;animation:fade .3s ease}
+.lockmask .lgo{width:50px;height:50px;border-radius:14px;background:linear-gradient(135deg,#3b6ef5,#6a8cff);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;font-weight:600}
+.lockmask h3{font-size:15px;font-weight:600}
+.lockmask .sub{font-size:12px;color:var(--muted);margin-top:-6px}
+.lockmask input{
+  width:250px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:14px;
+  letter-spacing:3px;text-align:center;outline:none;font-family:inherit;background:#fff;
+}
+.lockmask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,110,245,.1)}
+.lockmask .tip{font-size:11.5px;color:var(--faint)}
+
+/* ---------- pointer ---------- */
+.ptr{position:absolute;left:0;top:0;width:22px;height:22px;z-index:60;pointer-events:none;opacity:0;transition:transform .55s cubic-bezier(.4,0,.2,1),opacity .25s}
+.ptr.show{opacity:1}
+.ptr svg{width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+.ptr.clicking svg{transform:scale(.82)}
+.ripple{position:absolute;width:14px;height:14px;border-radius:50%;border:2px solid var(--accent);z-index:59;pointer-events:none;animation:rip .6s ease-out forwards}
+@keyframes rip{to{width:52px;height:52px;opacity:0;margin:-19px 0 0 -19px}}
+
+/* ---------- scene: end ---------- */
+.end{align-items:center;justify-content:center;gap:22px;background:#fbfcfe;padding:40px}
+.end h2{font-size:20px;font-weight:600}
+.end .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:660px;width:100%}
+.fitem{display:flex;gap:11px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+.fitem .k{width:26px;height:26px;border-radius:7px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;flex:0 0 26px}
+.fitem .k svg{width:14px;height:14px;stroke:var(--accent);fill:none;stroke-width:2}
+.fitem h4{font-size:13px;font-weight:600;margin-bottom:3px}
+.fitem p{font-size:11.5px;color:var(--muted);line-height:1.6}
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ok);background:#eefaf1;border:1px solid #c6ecd3;border-radius:20px;padding:6px 15px}
+
+/* ---------- caption + controls ---------- */
+.caption{
+  width:100%;max-width:900px;min-height:52px;background:#fff;border:1px solid var(--line);
+  border-radius:10px;padding:13px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 8px rgba(24,31,48,.05);
+}
+.cnum{flex:0 0 auto;font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;letter-spacing:.5px}
+.ctext{flex:1;font-size:13.5px;line-height:1.6;color:var(--text)}
+.ctext em{font-style:normal;color:var(--accent);font-weight:500}
+
+.controls{display:flex;align-items:center;gap:10px}
+.cbtn{
+  width:34px;height:34px;border:1px solid var(--line);background:#fff;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;color:var(--text);
+}
+.cbtn:hover{background:#f2f4f8;border-color:#d3d8e2}
+.cbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.cbtn.wide{width:auto;padding:0 13px;font-size:12.5px;gap:6px;font-family:inherit}
+.cbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.bar{flex:1;height:5px;background:#e3e6ec;border-radius:3px;overflow:hidden;min-width:180px;cursor:pointer}
+.bar i{display:block;height:100%;background:var(--accent);width:0%;border-radius:3px;transition:width .12s linear}
+.speed{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 11px;font-size:12.5px;cursor:pointer;font-family:inherit;color:var(--text)}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="win" id="win">
+    <div class="titlebar">
+      <div class="dots"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i></div>
+      <div class="title" id="winTitle">宝宝巴士</div>
+      <div class="tb-right">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+    </div>
+
+    <div class="win-body" id="body">
+
+      <!-- 1. gate -->
+      <section class="scene gate" id="sc-gate">
+        <div class="brand">
+          <div class="logo">宝</div>
+          <h1>宝宝巴士</h1>
+          <p>本地离线 · 绿色免安装 · 加密文件库</p>
+        </div>
+        <div class="cards">
+          <div class="card" id="cardNew">
+            <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div>
+            <h3>新建文件库</h3>
+            <p>选择一个文件夹作为文件库<br>并设置主密码</p>
+          </div>
+          <div class="card" id="cardOpen">
+            <div class="ico"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+            <h3>打开文件库</h3>
+            <p>选中已有的文件库文件夹<br>输入主密码解锁</p>
+          </div>
+        </div>
+        <div class="recent">
+          <h4>最近使用</h4>
+          <div class="recent-box">暂无记录 —— 本软件不预设默认路径，文件库位置完全由你指定</div>
+        </div>
+        <div class="hint">提示：文件库就是你自己选中的那个文件夹，可整体复制到 U 盘或另一台电脑</div>
+      </section>
+
+      <!-- 2. create -->
+      <section class="scene create" id="sc-create">
+        <div class="dlg">
+          <div class="dlg-head">新建文件库</div>
+          <div class="dlg-body">
+            <div class="field">
+              <label>文件库位置</label>
+              <div class="pathbox">
+                <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                <span id="pathText"></span>
+                <button>浏览</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>主密码</label>
+              <div class="pwbox"><input type="text" id="pw1" readonly placeholder=""></div>
+            </div>
+            <div class="rules">
+              <div class="rule" data-r="len"><span class="mk"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></span>8 位以上</div>
+              <div class="rule" data-r="letter"><span class="mk"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></span>包含字母</div>
+              <div class="rule" data-r="digit"><span class="mk"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></span>包含数字</div>
+            </div>
+          </div>
+          <div class="dlg-foot">
+            <button class="btn ghost">取消</button>
+            <button class="btn primary" id="btnCreate" disabled>创建文件库</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. derive -->
+      <section class="scene derive" id="sc-derive">
+        <div class="spin" id="spin"></div>
+        <div class="ok" id="deriveOk">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#16a34a" stroke-width="2.4" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <h2 id="deriveTitle">正在派生密钥…</h2>
+        <p id="deriveSub">Argon2id · 64MB · 3 passes</p>
+      </section>
+
+      <!-- 4. main -->
+      <section class="scene" id="sc-main">
+        <div class="toolbar">
+          <button class="tb" id="tbImport"><svg viewBox="0 0 24 24"><path d="M12 15V3m0 12l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>导入</button>
+          <button class="tb"><svg viewBox="0 0 24 24"><path d="M12 3v12m0-12l-4 4m4-4l4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>导出</button>
+          <button class="tb"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>新建文件夹</button>
+          <button class="tb"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/></svg>文件库</button>
+          <div class="tb-sep"></div>
+          <button class="tb"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>锁定</button>
+          <button class="tb"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>设置</button>
+          <div class="tb-spacer"></div>
+          <div class="lockchip" id="lockchip">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span id="countdown">5:00</span>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="side">
+            <div class="search">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input type="text" id="searchBox" placeholder="搜索文件名">
+            </div>
+            <div class="tree" id="tree"></div>
+          </div>
+
+          <div class="preview">
+            <div class="pv-head">
+              <span id="pvName">—</span>
+              <span class="tag" id="pvTag"></span>
+              <span class="lock">
+                <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+                内存中解密 · 不落盘
+              </span>
+            </div>
+            <div class="pv-body" id="pvBody">
+              <div class="empty">
+                <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+                <p>选择左侧文件即可预览</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="status">
+          <span>文件库 <b>D:\我的保险箱</b></span><span class="sep"></span>
+          <span><b id="stCount">0</b> 个文件</span><span class="sep"></span>
+          <span><b id="stSize">0 KB</b></span><span class="sep"></span>
+          <span>AES-256-GCM · Argon2id</span>
+          <span class="grow"></span>
+          <span id="stState" style="color:var(--ok)">已解锁</span>
+        </div>
+
+        <div class="drop" id="drop">
+          <svg class="big" viewBox="0 0 24 24"><path d="M12 15V3m0 12l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <p>松开即可加密导入</p>
+          <small>原始文件默认保留，不会被删除</small>
+        </div>
+
+        <div class="lockmask" id="lockmask">
+          <div class="lgo">宝</div>
+          <h3>文件库已锁定</h3>
+          <div class="sub">内存中的密钥已清空</div>
+          <input type="text" id="lockPw" readonly placeholder="">
+          <div class="tip">闲置超时自动锁定 · 需重新输入主密码</div>
+        </div>
+      </section>
+
+      <!-- 5. end -->
+      <section class="scene end" id="sc-end">
+        <h2>宝宝巴士 · 本地加密文件库</h2>
+        <div class="badge">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 13l4 4L19 7"/></svg>
+          全程离线 · 零网络请求
+        </div>
+        <div class="grid">
+          <div class="fitem"><div class="k"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><div><h4>AES-256-GCM 信封加密</h4><p>每个文件独立 DEK，主密钥包装，改密码不重加密全文</p></div></div>
+          <div class="fitem"><div class="k"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><div><h4>Argon2id 密钥派生</h4><p>64MB / 3 passes，抗 GPU 与 ASIC 暴力破解</p></div></div>
+          <div class="fitem"><div class="k"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><div><h4>目录结构一并加密</h4><p>密码错误时连文件名都看不到，零信息泄露</p></div></div>
+          <div class="fitem"><div class="k"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><div><h4>明文绝不落盘</h4><p>预览在内存中完成，大文件走流式协议边解边播</p></div></div>
+          <div class="fitem"><div class="k"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><div><h4>文件库自包含可迁移</h4><p>位置由你指定，整体复制到 U 盘或新电脑即可</p></div></div>
+          <div class="fitem"><div class="k"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><div><h4>闲置自动锁定</h4><p>锁屏即清空内存密钥，系统休眠同样触发</p></div></div>
+        </div>
+        <div class="hint" style="margin-top:0">忘记主密码无法恢复 —— 这是加密软件的安全设计，请务必牢记</div>
+      </section>
+
+      <div class="ptr" id="ptr">
+        <svg viewBox="0 0 24 24" fill="#fff" stroke="#1f2430" stroke-width="1.4"><path d="M5 2l14 8-6.5 1.5L9.5 19z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">
+    <span class="cnum" id="cnum">1 / 12</span>
+    <span class="ctext" id="ctext"></span>
+  </div>
+
+  <div class="controls" style="width:100%;max-width:900px">
+    <button class="cbtn" id="btnPrev" title="上一步"><svg viewBox="0 0 24 24"><path d="M18 6L8 12l10 6"/></svg></button>
+    <button class="cbtn" id="btnPlay" title="播放/暂停"><svg viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z"/></svg></button>
+    <button class="cbtn" id="btnNext" title="下一步"><svg viewBox="0 0 24 24"><path d="M6 6l10 6L6 18"/></svg></button>
+    <div class="bar" id="bar"><i id="barFill"></i></div>
+    <button class="speed" id="btnSpeed">1.0x</button>
+    <button class="cbtn wide" id="btnFull"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>全屏</button>
+  </div>
+
+</div>
+
+<script>
+/* ============ 数据 ============ */
+const FILES = [
+  {id:'f1', type:'folder', name:'项目资料', open:true},
+  {id:'f2', parent:'f1', type:'file', name:'合作合同.docx', ext:'docx', size:'286 KB', kind:'doc'},
+  {id:'f3', parent:'f1', type:'file', name:'预算表.xlsx', ext:'xlsx', size:'64 KB', kind:'sheet'},
+  {id:'f4', parent:'f1', type:'file', name:'产品架构图.png', ext:'png', size:'1.2 MB', kind:'image'},
+  {id:'f5', type:'folder', name:'财务', open:true},
+  {id:'f6', parent:'f5', type:'file', name:'2026 Q3 报表.xlsx', ext:'xlsx', size:'412 KB', kind:'sheet'},
+  {id:'f7', type:'folder', name:'技术文档', open:true},
+  {id:'f8', parent:'f7', type:'file', name:'接口说明.md', ext:'md', size:'18 KB', kind:'md'},
+  {id:'f9', parent:'f7', type:'file', name:'部署手册.pdf', ext:'pdf', size:'2.4 MB', kind:'doc'}
+];
+const FOLDER_ICON = '<svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const FILE_ICON = '<svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+
+const $ = s => document.querySelector(s);
+const body = $('#body');
+
+/* ============ 渲染文件树 ============ */
+let imported = false;
+function renderTree(filter){
+  const t = $('#tree');
+  t.innerHTML = '';
+  let count = 0;
+  FILES.forEach(f => {
+    if(f.type === 'folder'){
+      const d = document.createElement('div');
+      d.className = 'node folder';
+      d.innerHTML = FOLDER_ICON + '<span class="nm">'+f.name+'</span>';
+      t.appendChild(d);
+    } else {
+      if(filter && f.name.toLowerCase().indexOf(filter.toLowerCase()) < 0) return;
+      if(f.id === 'f10' && !imported) return;
+      count++;
+      const d = document.createElement('div');
+      d.className = 'node file' + (f.isNew ? ' new' : '');
+      d.style.paddingLeft = (8 + 16) + 'px';
+      d.dataset.id = f.id;
+      d.innerHTML = FILE_ICON + '<span class="nm">'+f.name+'</span><span class="sz">'+f.size+'</span>';
+      t.appendChild(d);
+    }
+  });
+  $('#stCount').textContent = count;
+  $('#stSize').textContent = imported ? '52.6 MB' : '48.2 MB';
+}
+
+/* ============ 预览内容 ============ */
+const PREVIEWS = {
+  doc: () => `
+    <div class="doc">
+      <h2>技术合作协议书</h2>
+      <div class="meta">甲方：宝宝巴士科技有限公司 &nbsp;·&nbsp; 乙方：星辰数据服务有限公司 &nbsp;·&nbsp; 签署日期：2026-08-14</div>
+      <p>甲乙双方本着平等互利、诚实信用的原则，经友好协商，就技术合作事宜达成如下协议，以资共同遵守。</p>
+      <p><strong>第一条 合作内容</strong></p>
+      <p>乙方为甲方提供本地化数据加密存储系统的技术支持与维护服务，服务范围包括系统部署、安全审计与版本升级。</p>
+      <p><strong>第二条 保密条款</strong></p>
+      <ol>
+        <li>双方对合作过程中知悉的对方技术资料、商业信息负有保密义务。</li>
+        <li>未经对方书面同意，任何一方不得向第三方披露本协议内容。</li>
+        <li>保密义务在本协议终止后继续有效，期限为三年。</li>
+      </ol>
+      <p><strong>第三条 违约责任</strong></p>
+      <p>任何一方违反本协议约定，应向守约方支付违约金，并赔偿由此造成的实际损失。</p>
+      <p>本协议一式两份，甲乙双方各执一份，自双方签字盖章之日起生效。</p>
+    </div>`,
+  sheet: () => `
+    <table class="sheet">
+      <tr><th>科目</th><th>Q1</th><th>Q2</th><th>Q3</th><th style="text-align:right">合计</th></tr>
+      <tr><td>研发投入</td><td class="num">128.0</td><td class="num">134.5</td><td class="num">152.3</td><td class="num">414.8</td></tr>
+      <tr><td>市场推广</td><td class="num">46.2</td><td class="num">52.8</td><td class="num">61.0</td><td class="num">160.0</td></tr>
+      <tr><td>运营成本</td><td class="num">33.7</td><td class="num">35.1</td><td class="num">38.9</td><td class="num">107.7</td></tr>
+      <tr><td>安全审计</td><td class="num">12.0</td><td class="num">12.0</td><td class="num">18.5</td><td class="num">42.5</td></tr>
+      <tr class="total"><td>合计（万元）</td><td class="num">219.9</td><td class="num">234.4</td><td class="num">270.7</td><td class="num">725.0</td></tr>
+    </table>`,
+  md: () => `
+    <div class="md">
+      <h1>文件加密服务 · 接口说明</h1>
+      <p>所有接口通过 <code>window.api</code> 暴露，采用 IPC 调用，参数经主进程严格校验。</p>
+      <h3>创建文件库</h3>
+      <p><code>await api.vault.create(dirPath, password)</code></p>
+      <ul><li>写入 <code>vault.meta</code>（KDF 参数、盐、校验值）</li><li>初始化 <code>manifest.enc</code> 与 <code>blobs/</code></li></ul>
+      <h3>导入文件</h3>
+      <p><code>await api.vault.import(filePaths, parentId)</code></p>
+      <blockquote>导入后原始文件默认保留，不由软件删除。SSD 与网盘目录上的覆写擦除不可靠，请勿依赖。</blockquote>
+      <h3>锁定</h3>
+      <p><code>api.vault.lock()</code> —— 立即清空内存中的 masterKey。</p>
+    </div>`,
+  image: () => `
+    <div class="shot">
+      <svg viewBox="0 0 520 300">
+        <rect width="520" height="300" fill="#f7f9fc"/>
+        <rect x="40" y="40" width="180" height="46" rx="8" fill="#dbe4f7"/>
+        <rect x="40" y="104" width="180" height="46" rx="8" fill="#e6ecf9"/>
+        <rect x="268" y="40" width="212" height="150" rx="10" fill="#fff" stroke="#dde3ee"/>
+        <rect x="292" y="66" width="164" height="12" rx="6" fill="#eef1f7"/>
+        <rect x="292" y="92" width="130" height="12" rx="6" fill="#eef1f7"/>
+        <rect x="292" y="118" width="150" height="12" rx="6" fill="#eef1f7"/>
+        <circle cx="130" cy="188" r="30" fill="#c9d8f7"/>
+        <rect x="40" y="232" width="180" height="12" rx="6" fill="#e6ecf9"/>
+        <rect x="40" y="256" width="130" height="12" rx="6" fill="#eef1f7"/>
+        <path d="M292 232h164" stroke="#dfe5ef" stroke-width="6" stroke-linecap="round"/>
+      </svg>
+    </div>`
+};
+
+function showPreview(f){
+  $('#pvName').textContent = f.name;
+  $('#pvTag').textContent = f.ext.toUpperCase();
+  $('#pvBody').innerHTML = (PREVIEWS[f.kind] || PREVIEWS.doc)();
+}
+
+/* ============ 指针 ============ */
+const ptr = $('#ptr');
+function movePtr(el, dx, dy){
+  if(!el) return;
+  const r = el.getBoundingClientRect(), b = body.getBoundingClientRect();
+  const x = r.left - b.left + r.width/2 + (dx||0);
+  const y = r.top - b.top + r.height/2 + (dy||0);
+  ptr.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+  ptr.classList.add('show');
+}
+function hidePtr(){ ptr.classList.remove('show'); }
+function clickAt(el, dx, dy){
+  movePtr(el, dx, dy);
+  return new Promise(res => {
+    setTimeout(() => {
+      ptr.classList.add('clicking');
+      const b = body.getBoundingClientRect(), r = el.getBoundingClientRect();
+      const rp = document.createElement('div');
+      rp.className = 'ripple';
+      rp.style.left = (r.left - b.left + r.width/2 - 7 + (dx||0)) + 'px';
+      rp.style.top  = (r.top - b.top + r.height/2 - 7 + (dy||0)) + 'px';
+      body.appendChild(rp);
+      setTimeout(() => rp.remove(), 620);
+      setTimeout(() => { ptr.classList.remove('clicking'); res(); }, 190);
+    }, 520);
+  });
+}
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+/* ============ 打字机 ============ */
+async function typeInto(el, text, perChar, dot){
+  const prop = (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') ? 'value' : 'textContent';
+  el[prop] = '';
+  for(let i=0;i<text.length;i++){
+    el[prop] = dot ? '•'.repeat(i+1) : text.slice(0, i+1);
+    await sleep(perChar);
+  }
+}
+
+/* ============ 步骤 ============ */
+const steps = [
+  {
+    n:'1 / 12',
+    t:'启动后进入 <em>文件库选择界面</em> —— 不设默认路径、不自动建库，位置完全由你指定',
+    async run(){
+      show('sc-gate'); $('#winTitle').textContent = '宝宝巴士';
+      hidePtr();
+    }
+  },
+  {
+    n:'2 / 12',
+    t:'点击「新建文件库」，自己挑一个文件夹 —— 可以是本机目录，也可以直接选 U 盘',
+    async run(){
+      show('sc-gate');
+      await clickAt($('#cardNew'));
+    }
+  },
+  {
+    n:'3 / 12',
+    t:'输入主密码。<em>8 位以上且必须同时含字母和数字</em>，不满足时「创建」按钮不放行',
+    async run(){
+      show('sc-create');
+      $('#pathText').textContent = '';
+      $('#pw1').value = '';
+      document.querySelectorAll('.rule').forEach(r => r.classList.remove('pass'));
+      $('#btnCreate').disabled = true;
+      await sleep(300);
+      await typeInto($('#pathText'), 'D:\\我的保险箱', 45, false);
+      await sleep(250);
+      const pw = 'Baobus2026';
+      const inp = $('#pw1');
+      for(let i=0;i<pw.length;i++){
+        inp.value = '•'.repeat(i+1);
+        const v = pw.slice(0,i+1);
+        if(v.length >= 8) document.querySelector('[data-r=len]').classList.add('pass');
+        if(/[a-zA-Z]/.test(v)) document.querySelector('[data-r=letter]').classList.add('pass');
+        if(/[0-9]/.test(v)) document.querySelector('[data-r=digit]').classList.add('pass');
+        await sleep(78);
+      }
+      await sleep(320);
+      $('#btnCreate').disabled = false;
+    }
+  },
+  {
+    n:'4 / 12',
+    t:'点击创建 —— 用 <em>Argon2id（64MB / 3 passes）</em> 派生主密钥，全程在主进程执行并显示等待',
+    async run(){
+      await clickAt($('#btnCreate'));
+      show('sc-derive');
+      $('#spin').style.display = 'block';
+      $('#deriveOk').classList.remove('show');
+      $('#deriveTitle').textContent = '正在派生密钥…';
+      $('#deriveSub').textContent = 'Argon2id · 64MB · 3 passes';
+      await sleep(1500);
+      $('#spin').style.display = 'none';
+      $('#deriveOk').classList.add('show');
+      $('#deriveTitle').textContent = '文件库已创建';
+      $('#deriveSub').textContent = 'vault.meta · manifest.enc · blobs/';
+    }
+  },
+  {
+    n:'5 / 12',
+    t:'进入主界面。顶部工具栏、左侧文件树与搜索、右侧预览区，底部状态栏显示 <em>当前文件库与锁屏倒计时</em>',
+    async run(){
+      show('sc-main');
+      imported = false; renderTree('');
+      $('#pvName').textContent = '—'; $('#pvTag').textContent = '';
+      $('#pvBody').innerHTML = '<div class="empty"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><p>选择左侧文件即可预览</p></div>';
+      hidePtr();
+    }
+  },
+  {
+    n:'6 / 12',
+    t:'从资源管理器<em>直接拖入</em>文件即可加密入库。导入后原始文件默认保留，不会误删',
+    async run(){
+      show('sc-main');
+      const cf = document.createElement('div');
+      cf.className = 'cardfile';
+      cf.innerHTML = '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>季度总结.docx</span>';
+      cf.style.left = '60px'; cf.style.top = '20px';
+      body.appendChild(cf);
+      movePtr(cf, 30, 14);
+      await sleep(400);
+      const tree = $('#tree');
+      const tr = tree.getBoundingClientRect(), br = body.getBoundingClientRect();
+      cf.style.transform = 'translate(' + (tr.left - br.left + 60) + 'px,' + (tr.top - br.top + 120) + 'px)';
+      movePtr(null);
+      ptr.style.transform = 'translate(' + (tr.left - br.left + 90) + 'px,' + (tr.top - br.top + 140) + 'px)';
+      await sleep(520);
+      $('#drop').classList.add('show');
+      await sleep(700);
+      $('#drop').classList.remove('show');
+      cf.remove(); hidePtr();
+      if(!FILES.find(f => f.id === 'f10')) {
+        FILES.splice(4, 0, {id:'f10', type:'file', name:'季度总结.docx', ext:'docx', size:'4.4 MB', kind:'doc', isNew:true});
+      }
+      imported = true; renderTree('');
+      await sleep(500);
+    }
+  },
+  {
+    n:'7 / 12',
+    t:'点击文件即可预览。Word / Excel / PPT / PDF 走内置渲染引擎，<em>明文只在内存中，不写任何临时文件</em>',
+    async run(){
+      show('sc-main');
+      imported = true; renderTree('');
+      const n1 = document.querySelector('[data-id=f2]');
+      if(n1){ n1.classList.add('sel'); await clickAt(n1, 0, 0); }
+      showPreview(FILES.find(f => f.id === 'f2'));
+      await sleep(900);
+      const n2 = document.querySelector('[data-id=f3]');
+      if(n2){
+        document.querySelectorAll('.node').forEach(n => n.classList.remove('sel'));
+        n2.classList.add('sel'); await clickAt(n2, 0, 0);
+        showPreview(FILES.find(f => f.id === 'f3'));
+      }
+    }
+  },
+  {
+    n:'8 / 12',
+    t:'图片、Markdown 同样在应用内渲染；<em>Markdown 按渲染后样式显示而非源码</em>',
+    async run(){
+      show('sc-main');
+      const n = document.querySelector('[data-id=f4]');
+      document.querySelectorAll('.node').forEach(x => x.classList.remove('sel'));
+      if(n){ n.classList.add('sel'); await clickAt(n, 0, 0); }
+      showPreview(FILES.find(f => f.id === 'f4'));
+      await sleep(900);
+      const m = document.querySelector('[data-id=f8]');
+      document.querySelectorAll('.node').forEach(x => x.classList.remove('sel'));
+      if(m){ m.classList.add('sel'); await clickAt(m, 0, 0); }
+      showPreview(FILES.find(f => f.id === 'f8'));
+    }
+  },
+  {
+    n:'9 / 12',
+    t:'搜索框按<em>文件名</em>实时过滤。搜索在已解密的目录树上做，纯内存、不落盘；不做全文检索以避免新增泄密面',
+    async run(){
+      show('sc-main');
+      const sb = $('#searchBox');
+      await clickAt(sb, 0, 0);
+      sb.focus();
+      await typeInto(sb, '合同', 130, false);
+      renderTree('合同');
+      await sleep(600);
+    }
+  },
+  {
+    n:'10 / 12',
+    t:'闲置超过设定时间<em>自动锁定</em>，系统休眠或睡眠同样触发',
+    async run(){
+      show('sc-main');
+      $('#searchBox').value = '';
+      renderTree('');
+      const chip = $('#lockchip'), cd = $('#countdown');
+      for(const v of ['0:15','0:10','0:05']){
+        cd.textContent = v; chip.className = 'lockchip ' + (v === '0:05' ? 'crit' : 'warn');
+        await sleep(260);
+      }
+    }
+  },
+  {
+    n:'11 / 12',
+    t:'锁定后<em>内存中的密钥被立即清空</em>，需重新输入主密码才能继续使用',
+    async run(){
+      show('sc-main');
+      $('#lockmask').classList.add('show');
+      $('#stState').textContent = '已锁定'; $('#stState').style.color = 'var(--danger)';
+      $('#lockPw').value = '';
+      await sleep(500);
+      await typeInto($('#lockPw'), 'Baobus2026', 70, true);
+      await sleep(500);
+    }
+  },
+  {
+    n:'12 / 12',
+    t:'<em>全程离线</em>：无更新检测、无崩溃上报、无埋点。文件库自包含，整体复制到 U 盘或新电脑即可继续使用',
+    async run(){
+      $('#lockmask').classList.remove('show');
+      $('#stState').textContent = '已解锁'; $('#stState').style.color = 'var(--ok)';
+      $('#countdown').textContent = '5:00';
+      $('#lockchip').className = 'lockchip';
+      hidePtr();
+      show('sc-end');
+    }
+  }
+];
+
+/* ============ 播放控制 ============ */
+let idx = 0, playing = true, speed = 1, timer = null, running = false;
+
+function show(id){
+  document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if(el) el.classList.add('active');
+}
+
+async function goStep(i){
+  if(running) return;
+  running = true;
+  idx = (i + steps.length) % steps.length;
+  const st = steps[idx];
+  $('#cnum').textContent = st.n;
+  $('#ctext').innerHTML = st.t;
+  $('#barFill').style.width = ((idx + 1) / steps.length * 100) + '%';
+  await st.run();
+  running = false;
+  if(playing) schedule();
+}
+function schedule(){
+  clearTimeout(timer);
+  timer = setTimeout(() => goStep(idx + 1), 900 / speed);
+}
+function pause(){ playing = false; clearTimeout(timer); $('#btnPlay').innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z"/></svg>'; }
+function play(){ playing = true; $('#btnPlay').innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 4v16M15 4v16"/></svg>'; if(!running) schedule(); else goStep(idx + 1); }
+
+$('#btnPlay').onclick = () => playing ? pause() : play();
+$('#btnNext').onclick = () => { pause(); goStep(idx + 1); };
+$('#btnPrev').onclick = () => { pause(); goStep(idx - 1); };
+$('#btnSpeed').onclick = () => {
+  speed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
+  $('#btnSpeed').textContent = speed.toFixed(1) + 'x';
+};
+$('#btnFull').onclick = () => {
+  const el = document.documentElement;
+  if(!document.fullscreenElement) el.requestFullscreen();
+  else document.exitFullscreen();
+};
+$('#bar').onclick = e => {
+  const r = $('#bar').getBoundingClientRect();
+  const p = (e.clientX - r.left) / r.width;
+  pause(); goStep(Math.floor(p * steps.length));
+};
+document.addEventListener('keydown', e => {
+  if(e.code === 'Space'){ e.preventDefault(); playing ? pause() : play(); }
+  if(e.code === 'ArrowRight'){ pause(); goStep(idx + 1); }
+  if(e.code === 'ArrowLeft'){ pause(); goStep(idx - 1); }
+});
+
+renderTree('');
+$('#btnPlay').innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 4v16M15 4v16"/></svg>';
+goStep(0);
+</script>
+</body>
+</html>
