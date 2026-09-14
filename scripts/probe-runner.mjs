@@ -14,7 +14,7 @@
  *   - 沙箱可能拦 Electron（报 `C:\Users\...\.ssh 读·拒绝`）；解法是把
  *     HOME/USERPROFILE/APPDATA/LOCALAPPDATA 全指到一个干净目录，四个都要设。
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -40,6 +40,30 @@ export function runProbe({ flag, outFile, timeoutMs = 180_000 }) {
 
   let log = ''
   let finished = false
+
+  /**
+   * 结束整棵进程树。
+   *
+   * `child.kill()` 只杀父进程 —— Electron 会派生 GPU / renderer / utility 子进程，
+   * 它们会活下来（实测一次探针泄漏 4 个 electron.exe，每个 5~60MB），
+   * 而且残留实例会让后续的冒烟/探针受**单实例锁**影响、静默退出。
+   * 所以用 taskkill /T /F 收整棵树。
+   */
+  function killTree() {
+    if (process.platform === 'win32') {
+      try {
+        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+        return
+      } catch {
+        /* 进程可能已自行退出，落到下面的兜底 */
+      }
+    }
+    try {
+      child.kill()
+    } catch {
+      /* 已经没了 */
+    }
+  }
 
   /**
    * 探针自己报的通过/失败决定 code。
@@ -95,7 +119,7 @@ export function runProbe({ flag, outFile, timeoutMs = 180_000 }) {
     }
     finished = true
     setTimeout(() => {
-      child.kill()
+      killTree()
       collect(codeFor(parsed), false)
     }, 150)
   }
@@ -110,7 +134,7 @@ export function runProbe({ flag, outFile, timeoutMs = 180_000 }) {
   child.on('exit', (code) => collect(code, false))
 
   setTimeout(() => {
-    child.kill()
+    killTree()
     collect('TIMEOUT', true)
   }, timeoutMs)
 }
