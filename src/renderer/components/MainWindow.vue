@@ -240,9 +240,10 @@ async function handledImport(parentId: string | null, paths: string[]) {
   await startImport(parentId, paths)
 }
 
-async function handledMove(id: string, parentId: string | null) {
-  const err = await move(id, parentId)
+async function handledMove(ids: string[], parentId: string | null) {
+  const err = await move(ids, parentId)
   if (err) toast.error(err)
+  else if (ids.length > 1) toast.ok(`已移动 ${ids.length} 项`)
 }
 
 /* ---------------- 搜索（防抖 + 内容检索） ---------------- */
@@ -357,7 +358,7 @@ function onGlobalKey(e: KeyboardEvent) {
         @create-folder="onCreateFolder"
         @cancel-folder="newFolderAt = null"
         @drop-files="handledImport"
-        @move-node="handledMove"
+        @move-nodes="handledMove"
         @request-delete="onTreeDelete"
         @request-new-folder="onTreeNewFolder"
         @request-export="onTreeExport"

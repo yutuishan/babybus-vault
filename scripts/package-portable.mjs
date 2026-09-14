@@ -11,6 +11,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { builtinModules } from 'node:module'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -51,7 +52,14 @@ const productExe = join(out, `${pkg.build.productName}.exe`)
 copyFileSync(join(out, 'electron.exe'), productExe)
 
 // 3) 用 staging 目录把 package.json + dist + 运行时依赖一起打成 app.asar
-const staging = join(root, `.asar-staging-${Date.now()}`)
+//
+// staging 放在**系统临时目录**，不放项目根：
+// 清理它要删掉 ~400 个文件，而宿主的批量删除保护会拦住（一次删超过 50 个就抛错，
+// 且那个错误没有 code 字段，提示是「清理 staging 失败 (undefined)」）。
+// 试过每 40 个一批地删，结果更糟 —— 删了 5 分钟还失败 31 项，像是按时间窗累计触发的。
+// 放到临时目录后，即使清理失败也只是系统 temp 里的垃圾，不会在项目根堆一堆
+// .asar-staging-* 目录；系统自己会回收。
+const staging = join(tmpdir(), `babybus-asar-staging-${Date.now()}`)
 rmSync(staging, { recursive: true, force: true })
 mkdirSync(staging, { recursive: true })
 copyFileSync(join(root, 'package.json'), join(staging, 'package.json'))
@@ -102,11 +110,12 @@ const asar = await import('@electron/asar')
 await asar.createPackage(staging, srcAsar)
 const size = statSync(srcAsar).size
 console.log(`[pack] app.asar = ${(size / 1024 / 1024).toFixed(2)} MB`)
-// asar 进程可能还握着 staging 里的某些文件，先尝试清掉；失败不影响最终产物
+// asar 进程可能还握着 staging 里的某些文件，先尝试清掉；失败不影响最终产物。
+// staging 在系统临时目录里，所以清不掉也只是 temp 垃圾，不会污染项目。
 try {
   rmSync(staging, { recursive: true, force: true })
 } catch (err) {
-  console.warn(`[pack] 警告：清理 staging 失败 (${err.code})，可手动删除 ${staging}`)
+  console.warn(`[pack] 提示：staging 未清干净 (${err.code ?? '批量删除被保护拦下'})，位置 ${staging}`)
 }
 
 // 4) 放 resources/app.asar

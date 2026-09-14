@@ -8,8 +8,8 @@
  */
 import { app, dialog, ipcMain, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import WordExtractor from 'word-extractor'
 import { CH } from '@shared/ipc'
 import type {
@@ -34,6 +34,7 @@ import { heartbeat, triggerLock } from '../autoLock'
 import { wipe } from '../crypto/secureBuffer'
 import { passwordIssues } from '../crypto/passwordPolicy'
 import { executeImport, scanImport } from './importPlan'
+import { exportNodes } from './exportPlan'
 
 /** M1 阶段预览走 IPC 整包传输，超过这个体积直接拒绝，避免撑爆内存 */
 const MAX_PREVIEW_BYTES = 32 * 1024 * 1024
@@ -277,10 +278,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     }
   })
 
-  ipcMain.handle(CH.vaultMove, (_e, id: string, parentId: string | null) => {
+  ipcMain.handle(CH.vaultMove, (_e, ids: string | string[], parentId: string | null) => {
     try {
       const vault = requireVault()
-      vault.moveNode(id, parentId)
+      const list = Array.isArray(ids) ? ids : [ids]
+      if (list.some((id) => typeof id !== 'string')) {
+        throw new VaultError('参数不合法', 'BAD_ARG')
+      }
+      // 多选拖拽一次可能移动几十项。不合并的话每项都要全量序列化整棵 manifest
+      // 并原子写一次磁盘；runBatch 只推迟落盘，不改任何语义。
+      // 中途某项非法（如把文件夹移进自己的子目录）会中断本批，
+      // 但 runBatch 仍会落盘一次 —— 已应用的改动与磁盘保持一致，不会留下孤儿状态。
+      vault.runBatch(() => {
+        for (const id of list) vault.moveNode(id, parentId)
+      })
       heartbeat()
       return ok(null)
     } catch (err) {
@@ -424,10 +435,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       if (res.canceled || !res.filePaths[0]) return ok({ exported: 0, destDir: '' } satisfies ExportResult)
 
       const destDir = res.filePaths[0]
-      let exported = 0
-      for (const id of ids) {
-        exported += exportNodeRecursive(vault, id, destDir)
-      }
+      // 目录树在 exportNodes 内部只取一次并建索引，不再逐个 id 递归重取（原来是 O(n²)）
+      const exported = exportNodes(vault, ids, destDir)
       heartbeat()
       return ok({ exported, destDir } satisfies ExportResult)
     } catch (err) {
@@ -581,31 +590,4 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   })
 
   ipcMain.handle(CH.windowIsMaximized, () => getWindow()?.isMaximized() ?? false)
-}
-
-/** 递归导出节点，保持原有目录结构 */
-function exportNodeRecursive(vault: Vault, id: string, destDir: string): number {
-  const nodes = vault.list()
-  const node = nodes.find((n) => n.id === id)
-  if (!node) return 0
-
-  const target = join(destDir, node.name)
-
-  if (node.type === 'folder') {
-    mkdirSync(target, { recursive: true })
-    let count = 0
-    for (const child of nodes.filter((n) => n.parentId === id)) {
-      count += exportNodeRecursive(vault, child.id, target)
-    }
-    return count
-  }
-
-  const content = vault.readFile(id)
-  try {
-    mkdirSync(dirname(target), { recursive: true })
-    writeFileSync(target, content)
-    return 1
-  } finally {
-    wipe(content)
-  }
 }

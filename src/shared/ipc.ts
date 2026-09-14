@@ -187,7 +187,8 @@ export interface VaultBridge {
   rename(id: string, name: string): Promise<Result<null>>
   /** 单个或批量删除，返回删除的节点总数 */
   remove(ids: string | string[]): Promise<Result<number>>
-  move(id: string, parentId: string | null): Promise<Result<null>>
+  /** 移动一个或多个节点到目标目录（null = 根目录）。批量时合并成一次落盘 */
+  move(ids: string | string[], parentId: string | null): Promise<Result<null>>
   search(keyword: string): Promise<NodeView[]>
   /** 全文检索文本类文件内容，仅解锁状态下可用 */
   searchContent(keyword: string): Promise<Result<ContentMatch[]>>

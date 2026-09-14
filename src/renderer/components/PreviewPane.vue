@@ -207,7 +207,20 @@ onUnmounted(revoke)
           <p class="sub err">{{ mediaError }}</p>
         </template>
         <template v-else>
-          <audio :src="mediaUrl" controls class="player" @error="onMediaError" />
+          <!--
+            播放器控件刻意关掉下载与投屏：
+            - nodownload：Chromium 原生控件的 ⋮ 菜单里有「下载」，会绕开文件库直接落盘明文；
+              右键菜单的「另存音频为…」同理，所以一并拦掉 contextmenu。
+            - noremoteplayback：投屏会把解密后的明文送到外部设备，和「明文不落盘」直接冲突。
+          -->
+          <audio
+            :src="mediaUrl"
+            controls
+            controlslist="nodownload noremoteplayback"
+            class="player"
+            @error="onMediaError"
+            @contextmenu.prevent
+          />
           <p class="name">{{ node.name }}</p>
           <p class="sub">边解密边播放，明文只在内存中经过</p>
         </template>
@@ -266,7 +279,15 @@ onUnmounted(revoke)
           <p class="sub err">{{ mediaError }}</p>
         </template>
         <template v-else>
-          <video :src="mediaUrl" controls class="video" @error="onMediaError" />
+          <!-- 同音频：关掉下载与投屏，理由见上面 audio 处的注释 -->
+          <video
+            :src="mediaUrl"
+            controls
+            controlslist="nodownload noremoteplayback"
+            class="video"
+            @error="onMediaError"
+            @contextmenu.prevent
+          />
           <p class="name">{{ node.name }}</p>
           <p class="sub">边解密边播放，可拖动进度条；明文只在内存中经过</p>
         </template>

@@ -165,6 +165,50 @@ describe('文件的写入与读取', () => {  it('写入后能原样读回（含
     vault.lock()
   })
 
+  it('批量移动多个节点（多选拖拽）一次调用即可全部就位', async () => {
+    const vault = await Vault.create(dir, PASSWORD)
+    const dest = vault.createFolder(null, '目标')
+    const f1 = vault.putFile(null, 'a.txt', Buffer.from('a'))
+    const f2 = vault.putFile(null, 'b.txt', Buffer.from('b'))
+    const folder = vault.createFolder(null, '素材')
+
+    // 对应 handlers 里 vaultMove 的批量分支：文件与文件夹混着移
+    vault.runBatch(() => {
+      for (const id of [f1.id, f2.id, folder.id]) vault.moveNode(id, dest.id)
+    })
+
+    const byId = new Map(vault.list().map((n) => [n.id, n]))
+    expect(byId.get(f1.id)!.parentId).toBe(dest.id)
+    expect(byId.get(f2.id)!.parentId).toBe(dest.id)
+    expect(byId.get(folder.id)!.parentId).toBe(dest.id)
+    vault.lock()
+  })
+
+  it('批量移动中途遇到非法项时，已应用的改动仍然落盘（不能留下内存与磁盘不一致）', async () => {
+    const vault = await Vault.create(dir, PASSWORD)
+    const target = vault.createFolder(null, '目标')
+    const a = vault.putFile(null, 'a.txt', Buffer.from('a'))
+    const inner = vault.createFolder(target.id, '内层')
+
+    // 顺序：先移 a（合法），再把 target 移进它自己的子目录 inner（非法 → 抛错）
+    expect(() =>
+      vault.runBatch(() => {
+        vault.moveNode(a.id, target.id)
+        vault.moveNode(target.id, inner.id)
+      }),
+    ).toThrow(/自己的子目录|自己下面/)
+
+    // a 的移动在抛错前已生效。runBatch 的契约是「无论 fn 是否抛错都落盘一次」——
+    // 渲染进程那边「移动失败也要 refresh」正是依赖这条契约：否则界面会与磁盘对不上。
+    vault.lock()
+
+    const reopened = await Vault.open(dir, PASSWORD)
+    const byId = new Map(reopened.list().map((n) => [n.id, n]))
+    expect(byId.get(a.id)!.parentId).toBe(target.id)
+    expect(byId.get(target.id)!.parentId).toBeNull()
+    reopened.lock()
+  })
+
   it('删除文件夹会递归删除其下所有文件', async () => {
     const vault = await Vault.create(dir, PASSWORD)
     const root = vault.createFolder(null, '根目录')

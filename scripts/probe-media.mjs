@@ -11,4 +11,6 @@
  */
 import { runProbe } from './probe-runner.mjs'
 
-runProbe({ flag: '--probe-media', outFile: 'probe-media-out.json' })
+// 夹具里有一个 ≈220MB 的超大媒体文件，生成 + 加密 + 渲染侧加载都要时间，
+// 默认 180s 不够，放宽到 300s
+runProbe({ flag: '--probe-media', outFile: 'probe-media-out.json', timeoutMs: 300_000 })

@@ -46,15 +46,33 @@ export async function runMediaProbe(win: BrowserWindow): Promise<Record<string, 
     const longNode = vault.putFile(null, 'long.wav', longWav)
     const longUrl = `vault://media/${longNode.id}`
 
+    /*
+     * 超大媒体文件。
+     *
+     * 2400 秒 @48kHz 单声道 16bit ≈ 220MB —— 故意贴着应用自己的导入上限（256MB）来，
+     * 因为用户真正会遇到的极端情况就是"能导进来的最大那个文件"。
+     * 它验证的是：流式解密在 200MB 量级上不会退化成"整份读进内存再切片"。
+     * 判据不是"能不能播"，而是**取 1KB 区间时 RSS 不该涨一个文件那么大**。
+     */
+    const hugeWav = makeWav(2400, 48000)
+    const hugeNode = vault.putFile(null, 'huge.wav', hugeWav)
+    const hugeUrl = `vault://media/${hugeNode.id}`
+
     const main = await probeFromMain(url, wav)
     const renderer = await probeFromRenderer(win, longUrl)
+    const huge = await probeHugeFromMain(hugeUrl, hugeWav)
+    const hugeRenderer = await probeFromRenderer(win, hugeUrl)
 
-    return {
+    const observed: Record<string, unknown> = {
       fileSize: wav.length,
       longFileSize: longWav.length,
+      hugeFileSize: hugeWav.length,
       main,
       renderer,
+      huge,
+      hugeRenderer,
     }
+    return { ...evaluate(observed), ...observed }
   } finally {
     try {
       vault.lock()
@@ -168,4 +186,88 @@ async function probeFromRenderer(
   } catch (err) {
     return { ok: false, threw: err instanceof Error ? err.message : String(err) }
   }
+}
+
+/**
+ * 超大媒体文件：只取末尾附近的 1KB，逐字节比对，并量一下 RSS 涨了多少。
+ *
+ * 这里刻意**不做**整份 net.fetch —— 那会把 220MB 全读进内存，正是要证明"没发生"的事。
+ */
+async function probeHugeFromMain(
+  url: string,
+  wav: Buffer,
+): Promise<Record<string, unknown>> {
+  const size = wav.length
+  // 90% 处：离起点足够远，任何"从 0 解到末尾再切片"的实现都会在这里暴露成内存/耗时问题
+  const start = Math.floor(size * 0.9)
+  const end = start + 1023
+
+  const rssBefore = process.memoryUsage().rss
+  const t0 = Date.now()
+  const res = await net.fetch(url, { headers: { Range: `bytes=${start}-${end}` } })
+  const bytes = Buffer.from(await res.arrayBuffer())
+  const ms = Date.now() - t0
+  const rssDelta = process.memoryUsage().rss - rssBefore
+
+  return {
+    size,
+    status: res.status,
+    length: bytes.length,
+    contentRange: res.headers.get('content-range'),
+    matches: bytes.equals(wav.subarray(start, end + 1)),
+    ms,
+    rssDeltaMB: +(rssDelta / 1048576).toFixed(1),
+    // 取 1KB 却让 RSS 涨了半个文件 → 说明被整份缓冲了
+    streamedNotBuffered: rssDelta < size / 2,
+  }
+}
+
+/** 把观测结果变成一组"通过/失败"，期望值全部硬编码 */
+function evaluate(o: Record<string, unknown>): { passed: string[]; failed: string[] } {
+  const passed: string[] = []
+  const failed: string[] = []
+
+  const ok = (cond: boolean, label: string, detail?: unknown) => {
+    if (cond) passed.push(label)
+    else failed.push(detail === undefined ? label : `${label}（实际：${JSON.stringify(detail)}）`)
+  }
+
+  const main = o.main as Record<string, unknown>
+  const renderer = o.renderer as Record<string, unknown>
+  const huge = o.huge as Record<string, unknown>
+  const hugeRenderer = o.hugeRenderer as Record<string, unknown>
+
+  // ---- 主进程侧：协议的字节级正确性 ----
+  ok(main.fullStatus === 200, '整份请求返回 200', main.fullStatus)
+  ok(main.fullMatches === true, '整份内容逐字节一致', main.fullLength)
+  ok(main.acceptRanges === 'bytes', '响应声明支持 Range', main.acceptRanges)
+  ok(main.rangedStatus === 206, '区间请求返回 206', main.rangedStatus)
+  ok(main.rangedMatches === true, '区间内容逐字节一致（跨 256KB 分块边界）', main.rangedContentRange)
+  ok(main.tailMatches === true, '末尾区间逐字节一致', main.tailLength)
+  // 回归：起点超过一个内部分块（256KB）的区间曾经永久挂死
+  ok(main.deepStatus === 206, '起点 300KB 的区间返回 206（回归：曾永久挂死）', main.deepStatus)
+  ok(main.deepMatches === true, '起点 300KB 的区间内容一致', main.deepLength)
+
+  // ---- 渲染进程侧：CSP + 媒体管线 ----
+  ok(renderer.ok === true, '渲染进程 <audio> 能加载并 seek', renderer)
+  ok(
+    typeof renderer.seekedTo === 'number' && (renderer.seekedTo as number) > 0,
+    'seek 后 currentTime 落在预期位置',
+    renderer.seekedTo,
+  )
+  ok(renderer.readyState === 4, 'seek 后 readyState 达到 4（HAVE_ENOUGH_DATA）', renderer.readyState)
+
+  // ---- 超大媒体文件（≈220MB）----
+  ok(huge.status === 206, '超大文件区间请求返回 206', huge.status)
+  ok(huge.length === 1024, '超大文件区间返回 1024 字节', huge.length)
+  ok(huge.matches === true, '超大文件 90% 处的内容逐字节一致', huge.contentRange)
+  ok(huge.streamedNotBuffered === true, '超大文件是流式的（RSS 未随文件大小膨胀）', huge.rssDeltaMB)
+  ok(hugeRenderer.ok === true, '超大文件在渲染进程能加载并 seek 到末尾附近', hugeRenderer)
+  ok(
+    typeof hugeRenderer.seekedTo === 'number' && (hugeRenderer.seekedTo as number) > 0,
+    '超大文件 seek 后 currentTime 落在预期位置',
+    hugeRenderer.seekedTo,
+  )
+
+  return { passed, failed }
 }

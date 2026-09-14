@@ -62,6 +62,7 @@
     "prune:dist:apply": "node scripts/prune-dist.mjs --apply",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:stress": "node scripts/stress.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

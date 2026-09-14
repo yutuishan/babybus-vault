@@ -263,12 +263,20 @@ export function useVault() {
     }
   }
 
-  async function move(id: string, parentId: string | null): Promise<string | null> {
-    const res = await window.api.move(id, parentId)
-    if (!res.ok) return res.error
+  /**
+   * 移动一个或多个节点到目标目录（null = 根目录）。
+   * 批量时主进程用 runBatch 合并成一次落盘，见 handlers 的 vaultMove。
+   */
+  async function move(ids: string | string[], parentId: string | null): Promise<string | null> {
+    // 同 remove：响应式数组是 Proxy，过 contextBridge 会抛 "could not be cloned"
+    const list = Array.from(Array.isArray(ids) ? ids : [ids], (id) => String(id))
+    const res = await window.api.move(list, parentId)
     if (parentId) state.expanded.add(parentId)
-    await refresh()
-    return null
+    // 失败也刷新：批量移动可能只应用了一部分（主进程 runBatch 会把已应用的改动落盘），
+    // 不刷新界面就会和磁盘上的真实状态对不上。
+    const refreshErr = await refresh()
+    if (!res.ok) return res.error
+    return refreshErr
   }
 
   /**

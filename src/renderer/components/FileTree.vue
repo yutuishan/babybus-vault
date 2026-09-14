@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useVault } from '../composables/useVault'
 import { useToast } from '../composables/useToast'
 import { buildTree, pathOf, type TreeNode } from '../utils/tree'
+import { DRAG_MIME, encodeDragIds, filterMovable, parseDragIds } from '../utils/drag'
 import { fileIcon } from '../utils/icons'
 import TreeNodeItem from './TreeNode.vue'
 
@@ -11,7 +12,7 @@ const emit = defineEmits<{
   (e: 'create-folder', name: string): void
   (e: 'cancel-folder'): void
   (e: 'drop-files', parentId: string | null, paths: string[]): void
-  (e: 'move-node', id: string, parentId: string | null): void
+  (e: 'move-nodes', ids: string[], parentId: string | null): void
   (e: 'request-delete', ids: string[]): void
   (e: 'request-new-folder', parentId: string | null): void
   (e: 'request-export', id: string): void
@@ -20,7 +21,14 @@ const emit = defineEmits<{
 const { state, rename, refresh } = useVault()
 const toast = useToast()
 
-const dragMime = 'application/x-vault-node'
+/**
+ * 拖拽载荷与合法性过滤都在 utils/drag.ts —— 那里能单测，组件里不能。
+ * 这里只负责把 DOM 事件和状态接起来。
+ */
+const dragMime = DRAG_MIME
+
+/** 多选拖拽时跟随光标的计数提示。常驻 DOM（挪到屏幕外），避免 setDragImage 抓不到未渲染的元素 */
+const dragGhostEl = ref<HTMLElement | null>(null)
 
 const tree = computed(() => buildTree(state.nodes))
 const dragOverId = ref<string | null>(null)
@@ -180,6 +188,34 @@ function allowDrop(e: DragEvent) {
   if (e.dataTransfer) e.dataTransfer.dropEffect = isExternalDrag(e) ? 'copy' : 'move'
 }
 
+/**
+ * 拖拽开始 —— 多选拖拽能否成立全看这里。
+ *
+ * 如果被按住的节点**已经在多选集合里**，就把整批 id 一起放进 dataTransfer；
+ * 否则只拖它自己（并把选择切过去）。只写单个 id 的话，选中 5 个再拖也只有 1 个会移动。
+ */
+function onDragStart(e: DragEvent, n: TreeNode) {
+  const inSelection = state.selectedIds.has(n.id)
+  const ids = inSelection && state.selectedIds.size > 1 ? [...state.selectedIds] : [n.id]
+
+  if (!inSelection) {
+    // 拖拽即选中，放下后才有可见反馈
+    state.selectedId = n.id
+    state.selectedIds = new Set([n.id])
+  }
+
+  draggingId.value = n.id
+  e.dataTransfer?.setData(dragMime, encodeDragIds(ids))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+
+  // 多选时给个「移动 N 项」的跟随提示，否则看不出拖的是一批还是一个
+  const ghost = dragGhostEl.value
+  if (ghost && ids.length > 1) {
+    ghost.textContent = `移动 ${ids.length} 项`
+    e.dataTransfer?.setDragImage(ghost, 8, 8)
+  }
+}
+
 async function onDrop(e: DragEvent, node: TreeNode | null) {
   e.preventDefault()
   e.stopPropagation()
@@ -194,8 +230,14 @@ async function onDrop(e: DragEvent, node: TreeNode | null) {
     return
   }
 
-  const id = e.dataTransfer?.getData(dragMime)
-  if (id && id !== node?.id) emit('move-node', id, parentId)
+  const raw = parseDragIds(e.dataTransfer?.getData(dragMime) ?? '')
+  const ids = filterMovable(state.nodes, raw, parentId)
+  if (!ids.length) {
+    // 有载荷却一个都不能动 → 是「拖进了自己/自己的子目录」，要说清楚，不能静默无反应
+    if (raw.length) toast.warn('不能把文件夹移动到它自己或它的子目录里')
+    return
+  }
+  emit('move-nodes', ids, parentId)
 }
 
 /* ---------------- 右键菜单 ---------------- */
@@ -317,6 +359,13 @@ function cancelNewFolder() {
     @drop="onDrop($event, null)"
     @contextmenu="openMenu($event, null)"
   >
+    <!--
+      多选拖拽时跟随光标的计数提示。
+      必须常驻 DOM 才能被 setDragImage 抓到（临时 append 再移除会赶在浏览器截图之前）。
+      用绝对定位挪到可视区外，而不是 display:none —— 隐藏元素截不出图。
+    -->
+    <div ref="dragGhostEl" class="drag-ghost" aria-hidden="true" />
+
     <div class="head">
       <span class="head-title">
         <span>文件库</span>
@@ -443,17 +492,7 @@ function cancelNewFolder() {
         @commit="commitRename"
         @cancel-edit="editingId = null"
         @contextmenu-node="openMenu"
-        @dragstart-node="
-          (e, n) => {
-            draggingId = n.id
-            e.dataTransfer?.setData(dragMime, n.id)
-            // 拖拽即选中，放下后可见反馈
-            if (!state.selectedIds.has(n.id)) {
-              state.selectedId = n.id
-              state.selectedIds = new Set([n.id])
-            }
-          }
-        "
+        @dragstart-node="onDragStart"
         @dragend-node="draggingId = null"
         @dragover-node="allowDrop"
         @enter-node="(id) => (dragOverId = id)"
@@ -512,6 +551,26 @@ function cancelNewFolder() {
 .tree.hover {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/*
+ * 多选拖拽的计数提示。
+ * fixed + 屏幕外定位：既不会被 .tree 的 overflow:hidden 裁掉，也不影响布局。
+ * 不能用 display:none / visibility:hidden —— 那样 setDragImage 截出来是空白。
+ */
+.drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 3px 10px var(--dropdown-shadow);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .head {

@@ -42,6 +42,17 @@ export function runProbe({ flag, outFile, timeoutMs = 180_000 }) {
   let finished = false
 
   /**
+   * 探针自己报的通过/失败决定 code。
+   *
+   * 只看"进程有没有崩"是不够的：断言失败时进程照样正常退出，
+   * 于是 out.json 里会写一个 OK，看起来一切正常 —— 这正是最坏的一种假绿。
+   */
+  function codeFor(result) {
+    const failed = result && Array.isArray(result.failed) ? result.failed : []
+    return failed.length ? `CHECKS_FAILED(${failed.length})` : 'OK'
+  }
+
+  /**
    * 落盘并退出。
    * 成功和超时两条路都要走它 —— 只写在 exit 回调里的话，
    * 「探针其实成功了、只是 app 没退出」会被报成 TIMEOUT + result: null，看起来像失败。
@@ -56,6 +67,13 @@ export function runProbe({ flag, outFile, timeoutMs = 180_000 }) {
         result = { parseError: String(err), raw: m[1] }
       }
     }
+    if (result && (Array.isArray(result.passed) || Array.isArray(result.failed))) {
+      const passed = result.passed ?? []
+      const failed = result.failed ?? []
+      console.log(`\n[探针] 通过 ${passed.length} 项，失败 ${failed.length} 项`)
+      for (const p of passed) console.log(`  ✓ ${p}`)
+      for (const f of failed) console.log(`  ✗ ${f}`)
+    }
     writeFileSync(OUT, JSON.stringify({ flag, code, timedOut: !!timedOut, result, log }, null, 2))
     process.exit(0)
   }
@@ -69,15 +87,16 @@ export function runProbe({ flag, outFile, timeoutMs = 180_000 }) {
     if (finished) return
     const m = /__PROBE__(.+)/.exec(log)
     if (!m) return
+    let parsed
     try {
-      JSON.parse(m[1])
+      parsed = JSON.parse(m[1])
     } catch {
       return // 还没收全，等下一块
     }
     finished = true
     setTimeout(() => {
       child.kill()
-      collect('OK', false)
+      collect(codeFor(parsed), false)
     }, 150)
   }
 
