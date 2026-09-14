@@ -8,14 +8,17 @@
  */
 import { app, dialog, ipcMain, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, extname, join, resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
+import WordExtractor from 'word-extractor'
 import { CH } from '@shared/ipc'
 import type {
   AppConfig,
   ContentMatch,
   ExportResult,
+  ImportConflictPolicy,
   ImportResult,
+  ImportScanResult,
   OpenResult,
   PickedEntry,
   ProbeResult,
@@ -24,17 +27,16 @@ import type {
 } from '@shared/ipc'
 import type { NodeView } from '@shared/types'
 import { Vault, VaultError } from '../vault/vault'
-import { isVaultDir, readVaultMeta, verifyPassword } from '../vault/vaultMeta'
+import { isVaultDir, peekHint, readVaultMeta, verifyPassword } from '../vault/vaultMeta'
 import { closeVault, currentVault, requireVault, setVault } from '../vault/session'
 import { loadConfig, patchConfig } from '../config'
 import { heartbeat, triggerLock } from '../autoLock'
 import { wipe } from '../crypto/secureBuffer'
 import { passwordIssues } from '../crypto/passwordPolicy'
+import { executeImport, scanImport } from './importPlan'
 
 /** M1 阶段预览走 IPC 整包传输，超过这个体积直接拒绝，避免撑爆内存 */
 const MAX_PREVIEW_BYTES = 32 * 1024 * 1024
-/** 导入单个文件的上限。超过后整文件加密会 OOM，等 M2 的流式写入补齐 */
-const MAX_IMPORT_BYTES = 256 * 1024 * 1024
 
 function ok<T>(data: T): Result<T> {
   return { ok: true, data }
@@ -79,6 +81,7 @@ function buildState(): VaultState {
       fileCount: 0,
       totalSize: 0,
       recoveredFromBackup: false,
+      hint: null,
     }
   }
   const nodes = vault.list()
@@ -92,30 +95,14 @@ function buildState(): VaultState {
     fileCount: nodes.filter((n) => n.type === 'file').length,
     totalSize: nodes.reduce((sum, n) => sum + (n.size ?? 0), 0),
     recoveredFromBackup: vault.recoveredFromBackup,
+    hint: vault.getHint() || null,
   }
 }
 
-/** 目录递归展开为文件列表。文件库自身的管理文件必须排除，否则会把库导进库 */
-function collectFiles(paths: string[], out: string[] = []): string[] {
-  for (const path of paths) {
-    if (!existsSync(path)) continue
-    const stat = statSync(path)
-    if (stat.isDirectory()) {
-      const entries = readdirSync(path)
-      collectFiles(
-        entries.map((e) => join(path, e)),
-        out,
-      )
-    } else if (stat.isFile()) {
-      out.push(path)
-    }
-  }
-  return out
-}
-
-function vaultInternalName(name: string): boolean {
-  return name === 'vault.meta' || name === 'manifest.enc' || name === 'manifest.enc.bak'
-}
+/**
+ * 目录树的读取与重名策略都在 importPlan.ts 里 —— 那部分逻辑跟 IPC 无关，
+ * 单独放也方便写单测（见 tests/import-plan.spec.ts）。
+ */
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
   // ------------------------------------------------------------ 应用级
@@ -183,14 +170,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     return { exists, isVault: isVaultDir(dir), writable }
   })
 
-  ipcMain.handle(CH.vaultCreate, async (_e, dir: string, password: string) => {
+  ipcMain.handle(CH.vaultCreate, async (_e, dir: string, password: string, hint?: string) => {
     try {
       if (typeof dir !== 'string' || !dir) throw new VaultError('请先选择文件库位置', 'NO_DIR')
       const issues = passwordIssues(password)
       if (issues.length) throw new VaultError(issues[0]!, 'WEAK_PASSWORD')
 
       closeVault()
-      const vault = await Vault.create(dir, password)
+      const vault = await Vault.create(dir, password, typeof hint === 'string' ? hint : '')
       setVault(vault)
       heartbeat()
       const result: OpenResult = { ok: true, state: buildState(), nodes: vault.list() }
@@ -231,6 +218,24 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(CH.vaultList, (): NodeView[] => {
     const vault = currentVault()
     return vault && !vault.isLocked ? vault.list() : []
+  })
+
+  /**
+   * 刷新文件库：重新从磁盘读一遍 manifest。
+   *
+   * 与 vaultList 的区别很关键 —— vaultList 只是把内存里那份目录树再取一次，
+   * 磁盘上的变化（同步盘回写、外部替换）永远看不到。这里是真的重读。
+   * 读取失败时主进程保持原状态不变并返回错误，不会把界面上的树清空。
+   */
+  ipcMain.handle(CH.vaultReload, (): Result<{ state: VaultState; nodes: NodeView[] }> => {
+    try {
+      const vault = requireVault()
+      vault.reload()
+      heartbeat()
+      return ok({ state: buildState(), nodes: vault.list() })
+    } catch (err) {
+      return fail(err)
+    }
   })
 
   ipcMain.handle(CH.vaultCreateFolder, (_e, parentId: string | null, name: string) => {
@@ -352,54 +357,57 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   // ------------------------------------------------------------ 导入导出
 
-  ipcMain.handle(CH.vaultImport, (_e, parentId: string | null, paths: string[]) => {
-    try {
-      const vault = requireVault()
-      if (!Array.isArray(paths) || paths.length === 0) {
-        throw new VaultError('没有选择任何文件', 'EMPTY')
+  /**
+   * 导入前的预扫描。
+   *
+   * 存在的意义：用户拖进来一个文件夹，里面可能有几个和库里重名的东西。
+   * 「覆盖」会丢掉库里那份，「保留两者」会多出一份 —— 两种结果差别很大，
+   * 必须先把冲突清单摆出来让用户自己选，而不是替他们决定。
+   */
+  ipcMain.handle(
+    CH.vaultScanImport,
+    (_e, parentId: string | null, paths: string[]): Result<ImportScanResult> => {
+      try {
+        const vault = requireVault()
+        if (!Array.isArray(paths) || paths.length === 0) {
+          throw new VaultError('没有选择任何文件', 'EMPTY')
+        }
+        return ok(scanImport(vault, parentId ?? null, paths))
+      } catch (err) {
+        return fail(err)
       }
-      const vaultRoot = resolve(vault.vaultDir)
-      const files = collectFiles(paths)
-      const result: ImportResult = { imported: 0, skipped: 0, failed: [] }
+    },
+  )
 
-      for (const file of files) {
-        const name = basename(file)
-        if (vaultInternalName(name)) {
-          result.skipped++
-          continue
+  /**
+   * 导入文件与文件夹。
+   *
+   * 目录层级会被原样保留（见 importPlan.ts）；同名项按 policy 处理：
+   * overwrite 覆盖、keep-both 改名保留两者。policy 缺省按 keep-both ——
+   * 这是不会丢数据的那一侧，宁可多一份也不能悄悄删掉用户的文件。
+   */
+  ipcMain.handle(
+    CH.vaultImport,
+    (
+      _e,
+      parentId: string | null,
+      paths: string[],
+      policy?: ImportConflictPolicy,
+    ): Result<ImportResult> => {
+      try {
+        const vault = requireVault()
+        if (!Array.isArray(paths) || paths.length === 0) {
+          throw new VaultError('没有选择任何文件', 'EMPTY')
         }
-        // 防止把整个文件库导进自己，造成无限膨胀
-        if (resolve(dirname(file)) === vaultRoot || resolve(file).startsWith(join(vaultRoot, 'blobs'))) {
-          result.skipped++
-          continue
-        }
-        try {
-          const size = statSync(file).size
-          if (size > MAX_IMPORT_BYTES) {
-            result.failed.push({ path: file, reason: '文件超过 256MB，当前版本暂不支持' })
-            continue
-          }
-          const content = readFileSync(file)
-          try {
-            vault.putFile(parentId, name, content)
-            result.imported++
-          } finally {
-            wipe(content)
-          }
-        } catch (err) {
-          result.failed.push({
-            path: file,
-            reason: err instanceof Error ? err.message : String(err),
-          })
-        }
+        const effective: ImportConflictPolicy = policy === 'overwrite' ? 'overwrite' : 'keep-both'
+        const result = executeImport(vault, parentId ?? null, paths, effective)
+        heartbeat()
+        return ok(result)
+      } catch (err) {
+        return fail(err)
       }
-
-      heartbeat()
-      return ok(result)
-    } catch (err) {
-      return fail(err)
-    }
-  })
+    },
+  )
 
   ipcMain.handle(CH.vaultExport, async (_e, ids: string[]) => {
     try {
@@ -449,6 +457,39 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     }
   })
 
+  /**
+   * 旧版 .doc（Word 97-2003 二进制格式）的文本提取预览。
+   * mammoth 只认 docx，二进制 doc 必须在主进程解析（word-extractor 依赖 Node Buffer）。
+   * 解析结果只含纯文本，不回传任何富文本/样式，渲染端当作不可信文本展示。
+   */
+  const docExtractor = new WordExtractor()
+
+  ipcMain.handle(CH.vaultExtractText, async (_e, id: string): Promise<Result<string>> => {
+    let content: Buffer | null = null
+    try {
+      const vault = requireVault()
+      if (typeof id !== 'string') throw new VaultError('参数不合法', 'BAD_ARG')
+      const node = vault.list().find((n) => n.id === id)
+      if (!node || node.type !== 'file') throw new VaultError('文件不存在', 'NOT_FOUND')
+      if ((node.ext ?? '').toLowerCase() !== 'doc') {
+        throw new VaultError('该格式不需要文本提取', 'BAD_ARG')
+      }
+      if ((node.size ?? 0) > MAX_PREVIEW_BYTES) {
+        throw new VaultError('文件超过 32MB，当前版本暂不支持预览（可导出后查看）', 'TOO_LARGE')
+      }
+      content = vault.readFile(id)
+      const doc = await docExtractor.extract(content)
+      const body = doc.getBody()
+      heartbeat()
+      return ok(body)
+    } catch (err) {
+      if (err instanceof VaultError) return fail(err)
+      return fail(new VaultError('doc 解析失败：文件可能已损坏或不是有效的 Word 97-2003 文档', 'BAD_DOC'))
+    } finally {
+      if (content) wipe(content)
+    }
+  })
+
   // ------------------------------------------------------------ 改密码
 
   ipcMain.handle(CH.vaultChangePassword, async (_e, oldPassword: string, newPassword: string) => {
@@ -471,6 +512,50 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       return fail(err)
     } finally {
       if (derived) wipe(derived)
+    }
+  })
+
+  // ------------------------------------------------------------ 主密码提示
+  //
+  // 提示语存在明文的 vault.meta 里（VaultMeta.hint），所以它在锁定状态下也能读 ——
+  // 这正是需求要的：锁屏界面要能显示提示，帮想不起密码的人回忆。
+  //
+  // 代价必须说清楚：任何拿到这个文件夹的人都能直接读出提示语。因此界面上要写明
+  // 「不要直接把密码本身写进提示」。相关取舍见 shared/types.ts 的 VaultMeta.hint。
+
+  /** 读提示语（仅解锁状态）—— 设置界面用，拿到的是当前会话里的值 */
+  ipcMain.handle(CH.vaultGetHint, (): Result<string> => {
+    try {
+      const vault = requireVault()
+      return ok(vault.getHint())
+    } catch (err) {
+      return fail(err)
+    }
+  })
+
+  /**
+   * 读提示语（**不需要解锁**）—— 锁屏界面与解锁界面用。
+   *
+   * 传目录而不是走当前会话：锁定之后主进程里的 Vault 实例已经被丢弃了，
+   * 唯一还知道库在哪的就是渲染进程手里的 state.dir。
+   */
+  ipcMain.handle(CH.vaultPeekHint, (_e, dir: string): Result<string> => {
+    try {
+      if (typeof dir !== 'string' || !dir) return ok('')
+      return ok(peekHint(dir))
+    } catch (err) {
+      return fail(err)
+    }
+  })
+
+  ipcMain.handle(CH.vaultSetHint, (_e, hint: string): Result<null> => {
+    try {
+      const vault = requireVault()
+      vault.setHint(typeof hint === 'string' ? hint : '')
+      heartbeat()
+      return ok(null)
+    } catch (err) {
+      return fail(err)
     }
   })
 

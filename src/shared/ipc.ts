@@ -15,6 +15,7 @@ export const CH = {
   vaultLock: 'vault:lock',
   vaultState: 'vault:state',
   vaultList: 'vault:list',
+  vaultReload: 'vault:reload',
   vaultCreateFolder: 'vault:folder:create',
   vaultRename: 'vault:rename',
   vaultRemove: 'vault:remove',
@@ -22,9 +23,15 @@ export const CH = {
   vaultSearch: 'vault:search',
   vaultSearchContent: 'vault:search:content',
   vaultImport: 'vault:import',
+  vaultScanImport: 'vault:import:scan',
   vaultExport: 'vault:export',
   vaultReadFile: 'vault:read',
+  vaultExtractText: 'vault:text:extract',
   vaultChangePassword: 'vault:password:change',
+  vaultGetHint: 'vault:hint:get',
+  vaultSetHint: 'vault:hint:set',
+  /** 读提示语，不需要解锁 —— 锁屏界面用 */
+  vaultPeekHint: 'vault:hint:peek',
 
   autoLockHeartbeat: 'autolock:heartbeat',
   autoLockTick: 'autolock:tick',
@@ -41,12 +48,14 @@ export const CH = {
 export type ThemeMode = 'light' | 'dark'
 
 export interface AppConfig {
-  /** 0 表示从不自动锁定 */
+  /** 自动锁定分钟数。恒 > 0 —— 没有「从不」这一档，见 config.ts 的归一化逻辑 */
   autoLockMinutes: number
   lockOnSuspend: boolean
   theme: ThemeMode
   /** 界面字体缩放，1 为默认。0.85 / 1 / 1.15 / 1.3 */
   fontScale: number
+  /** 是否已经看过新手引导。仅首次启动自动弹出，之后只从工具栏进入 */
+  guideSeen: boolean
 }
 
 // ---------------------------------------------------------------- 请求/响应
@@ -67,6 +76,11 @@ export interface VaultState {
   fileCount: number
   totalSize: number
   recoveredFromBackup: boolean
+  /**
+   * 主密码提示语。仅解锁状态下有值 —— 它存在加密的 manifest 里，
+   * 锁着的时候主进程自己也读不出来（密钥已清空）。
+   */
+  hint: string | null
 }
 
 export interface OpenResult {
@@ -77,8 +91,41 @@ export interface OpenResult {
 
 export interface ImportResult {
   imported: number
-  skipped: number
+  /** 新建的文件夹数量（合并进已有同名目录的不算） */
+  folders: number
   failed: { path: string; reason: string }[]
+}
+
+/**
+ * 导入重名时的处理策略。
+ *
+ * - `overwrite`：同名文件用新的替换掉旧的（旧密文直接从磁盘删除）；同名文件夹则合并进去。
+ * - `keep-both`：保留两者，新来的自动改名成 `名字 (2).ext` / `名字 (2)`，两边都能找到。
+ *
+ * 刻意不做成"自动选一个"：这两种语义差别很大（一种是丢数据、一种是留冗余），
+ * 只能由用户在看清冲突清单后决定。
+ */
+export type ImportConflictPolicy = 'overwrite' | 'keep-both'
+
+export interface ImportConflict {
+  /** 带相对路径的显示名，便于分辨是哪一个，如 "照片/2024" */
+  name: string
+  /** 即将导入的是文件还是文件夹 */
+  kind: 'file' | 'folder'
+  /** 文件库里已存在的是文件还是文件夹（类型不同也属于冲突） */
+  existingType: 'file' | 'folder'
+}
+
+/** 导入前的预扫描结果：让用户在动手之前就知道会发生什么 */
+export interface ImportScanResult {
+  /** 将要导入的文件总数 */
+  files: number
+  /** 将要导入的文件夹总数 */
+  folders: number
+  /** 与库里已有项重名的条目（含嵌套层级） */
+  conflicts: ImportConflict[]
+  /** 因为超过大小上限等原因注定失败的条目数，提前告知 */
+  oversized: number
 }
 
 export interface ExportResult {
@@ -125,11 +172,17 @@ export interface VaultBridge {
   openExternal(url: string): Promise<void>
 
   probe(dir: string): Promise<ProbeResult>
-  create(dir: string, password: string): Promise<Result<{ state: VaultState; nodes: NodeView[] }>>
+  create(
+    dir: string,
+    password: string,
+    hint?: string,
+  ): Promise<Result<{ state: VaultState; nodes: NodeView[] }>>
   open(dir: string, password: string): Promise<Result<{ state: VaultState; nodes: NodeView[] }>>
   lock(): Promise<void>
   state(): Promise<VaultState>
   list(): Promise<NodeView[]>
+  /** 重新从磁盘读 manifest 并返回最新状态与目录树（「刷新文件库」） */
+  reload(): Promise<Result<{ state: VaultState; nodes: NodeView[] }>>
   createFolder(parentId: string | null, name: string): Promise<Result<NodeView>>
   rename(id: string, name: string): Promise<Result<null>>
   /** 单个或批量删除，返回删除的节点总数 */
@@ -138,10 +191,24 @@ export interface VaultBridge {
   search(keyword: string): Promise<NodeView[]>
   /** 全文检索文本类文件内容，仅解锁状态下可用 */
   searchContent(keyword: string): Promise<Result<ContentMatch[]>>
-  importPaths(parentId: string | null, paths: string[]): Promise<Result<ImportResult>>
+  importPaths(
+    parentId: string | null,
+    paths: string[],
+    policy?: ImportConflictPolicy,
+  ): Promise<Result<ImportResult>>
+  /** 导入前预扫描：统计文件/文件夹数量，并列出与库中重名的条目 */
+  scanImport(parentId: string | null, paths: string[]): Promise<Result<ImportScanResult>>
   exportNodes(ids: string[]): Promise<Result<ExportResult>>
   readFile(id: string): Promise<Result<Uint8Array>>
+  /** 旧版 doc 的文本提取预览：解密与解析都在主进程，渲染端只拿纯文本 */
+  extractText(id: string): Promise<Result<string>>
   changePassword(oldPassword: string, newPassword: string): Promise<Result<null>>
+  /** 读取主密码提示语（仅解锁状态可用） */
+  getHint(): Promise<Result<string>>
+  /** 读取主密码提示语（**不需要解锁**）—— 锁屏界面与解锁界面用 */
+  peekHint(dir: string): Promise<Result<string>>
+  /** 设置/清除主密码提示语（仅解锁状态可用） */
+  setHint(hint: string): Promise<Result<null>>
 
   heartbeat(): void
   /** 主进程推送锁定事件，reason 为 idle / suspend / system-lock / manual */

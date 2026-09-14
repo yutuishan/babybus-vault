@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Vault, VaultError } from '../src/main/vault/vault'
-import { isVaultDir } from '../src/main/vault/vaultMeta'
+import { isVaultDir, peekHint } from '../src/main/vault/vaultMeta'
 import { wipe } from '../src/main/crypto/secureBuffer'
 
 let dir: string
@@ -56,8 +56,72 @@ describe('新建与打开文件库', () => {
   })
 })
 
-describe('文件的写入与读取', () => {
-  it('写入后能原样读回（含中文与二进制）', async () => {
+describe('密码提示', () => {
+  it('提示语存在明文的 vault.meta 里，锁定状态下也读得到', async () => {
+    const HINT = '常用那串加生日'
+    const vault = await Vault.create(dir, PASSWORD, HINT)
+    expect(vault.getHint()).toBe(HINT)
+    vault.lock()
+
+    // 这是刻意的设计取舍：提示语必须能在锁屏上显示，那就只能是不加密的。
+    // 代价是任何拿到这个文件夹的人都能直接读出它 —— 界面上必须写清楚这一点。
+    expect(readFileSync(join(dir, 'vault.meta'), 'utf8')).toContain(HINT)
+    // 提示语不能再进 manifest：两个存储位置同时存在迟早会不一致
+    expect(readFileSync(join(dir, 'manifest.enc')).includes(Buffer.from(HINT, 'utf8'))).toBe(false)
+
+    // 锁屏路径：不需要密码就能读
+    expect(peekHint(dir)).toBe(HINT)
+
+    const again = await Vault.open(dir, PASSWORD)
+    expect(again.getHint()).toBe(HINT)
+    again.lock()
+  })
+
+  it('peekHint 读不到时返回空串而不是抛错', () => {
+    // 锁屏界面不该因为读个提示语失败就报错
+    expect(peekHint(join(dir, '不存在的目录'))).toBe('')
+    expect(peekHint('')).toBe('')
+  })
+
+  it('新建时不传提示语，getHint 返回空串而不是 undefined', async () => {
+    const vault = await Vault.create(dir, PASSWORD)
+    expect(vault.getHint()).toBe('')
+    vault.lock()
+  })
+
+  it('未解锁时读提示语必须被拒绝', async () => {
+    const vault = await Vault.create(dir, PASSWORD, 'x')
+    vault.lock()
+    expect(() => vault.getHint()).toThrow(VaultError)
+    expect(() => vault.setHint('y')).toThrow(VaultError)
+  })
+
+  it('改提示语会落盘；传空串等于删除', async () => {
+    const vault = await Vault.create(dir, PASSWORD, 'old')
+    vault.setHint('new-hint')
+    expect(vault.getHint()).toBe('new-hint')
+    vault.setHint('   ')
+    expect(vault.getHint()).toBe('')
+    vault.lock()
+
+    const again = await Vault.open(dir, PASSWORD)
+    expect(again.getHint()).toBe('')
+    again.lock()
+  })
+
+  it('修改主密码后提示语必须保留', async () => {
+    const vault = await Vault.create(dir, PASSWORD, 'keep-me')
+    await vault.changePassword('Bb-2026-another-pass')
+    expect(vault.getHint()).toBe('keep-me')
+    vault.lock()
+
+    const again = await Vault.open(dir, 'Bb-2026-another-pass')
+    expect(again.getHint()).toBe('keep-me')
+    again.lock()
+  })
+})
+
+describe('文件的写入与读取', () => {  it('写入后能原样读回（含中文与二进制）', async () => {
     const vault = await Vault.create(dir, PASSWORD)
     const content = Buffer.from('机密：2026 年度并购方案\r\n附件二进制：\x00\x01\x02\xff', 'latin1')
 

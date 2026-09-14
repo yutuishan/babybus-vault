@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #eef0f4;
   --win: #ffffff;
   --panel: #ffffff;
@@ -14,7 +15,11 @@
   --accent-soft: #eaf0ff;
   --ok: #16a34a;
   --warn: #d97706;
+  --warn-soft: #fff7ed;
+  --warn-line: #fcd9a8;
+  --warn-text: #8a4b06;
   --danger: #dc2626;
+  --line-strong: #c9d0de;
   --hover: #f5f6fa;
   --radius: 8px;
   --stage: #f4f6f9;
@@ -42,7 +47,11 @@
   --accent-soft: #26304a;
   --ok: #34b36b;
   --warn: #e0a04a;
+  --warn-soft: #2d2416;
+  --warn-line: #4d3d1e;
+  --warn-text: #e3b268;
   --danger: #e05252;
+  --line-strong: #3a4150;
   --hover: #262a33;
   --stage: #14161b;
   --ok-soft: #1c2e24;
@@ -88,8 +97,14 @@ select {
   color: inherit;
 }
 
+/*
+ * 原生下拉浮层由操作系统绘制，不继承 select 自身的颜色，必须显式给足。
+ * 之前只写死了深色文字，暗色主题下就变成「浅底浅字」看不见 ——
+ * 所以背景和文字都得跟着主题走。
+ */
 select option {
-  color: #1f2430;
+  background: var(--panel);
+  color: var(--text);
 }
 
 /* 界面字体缩放：设置里改 --font-scale，整体等比缩放 */
@@ -114,7 +129,7 @@ select option {
 }
 
 .btn:hover:not(:disabled) {
-  border-color: #c9d0de;
+  border-color: var(--line-strong);
   background: var(--hover);
 }
 
@@ -136,7 +151,7 @@ select option {
 
 .btn.danger {
   color: var(--danger);
-  border-color: #f2c9c9;
+  border-color: var(--danger-line);
 }
 
 .btn.danger:hover:not(:disabled) {

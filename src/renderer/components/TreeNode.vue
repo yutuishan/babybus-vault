@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useVault } from '../composables/useVault'
 import { formatSize } from '../utils/format'
+import { fileIcon } from '../utils/icons'
 import type { TreeNode as TreeNodeData } from '../utils/tree'
 
 // 组件按文件名自引用；类型别名避免与自引用组件名撞车
@@ -48,6 +49,39 @@ const editBase = computed(() => {
   if (dot > 0 && dot < name.length - 1) return name.slice(0, dot)
   return name
 })
+
+/** 节点图标：按文件类型区分，见 utils/icons.ts */
+const icon = computed(() => fileIcon(props.node))
+
+const editEl = ref<HTMLInputElement | null>(null)
+
+/**
+ * 进入编辑时主动聚焦并全选。
+ *
+ * 之前只写了 `autofocus` 属性 —— 那个属性只在**页面初次加载**时生效，
+ * 对之后才插入 DOM 的 input 完全没有作用。于是输入框渲染出来了却没有焦点：
+ * 按回车没反应、点别处也不触发 blur，用户必须先点进输入框、再点出去，
+ * 重命名才会结束（这就是「要聚焦再失焦才能关闭」的由来）。
+ */
+watch(editing, async (on) => {
+  if (!on) return
+  await nextTick()
+  editEl.value?.focus()
+  // 全选主名：直接打字即可替换，不用先删一遍
+  editEl.value?.select()
+})
+
+/**
+ * 失焦提交。
+ *
+ * 必须先判断 editing 是否仍然为真：按 Esc 取消时父组件把 editingId 置空，
+ * input 随即被移除，而移除在某些路径下会补发一个 blur —— 不拦的话，
+ * 用户**取消掉的重命名**反而会被真的提交上去。回车提交同理（同样是先置空再移除）。
+ */
+function onBlur(e: FocusEvent) {
+  if (!editing.value) return
+  emit('commit', props.node.id, (e.target as HTMLInputElement).value)
+}
 </script>
 
 <template>
@@ -76,17 +110,17 @@ const editBase = computed(() => {
       >
       <span v-else class="arrow placeholder" />
 
-      <span class="icon">{{ node.type === 'folder' ? '📁' : '📄' }}</span>
+      <span class="icon">{{ icon }}</span>
 
       <input
         v-if="editing"
+        ref="editEl"
         class="mini"
         :value="editBase"
-        autofocus
         @click.stop
         @keydown.enter="emit('commit', node.id, ($event.target as HTMLInputElement).value)"
         @keydown.esc="emit('cancel-edit')"
-        @blur="emit('commit', node.id, ($event.target as HTMLInputElement).value)"
+        @blur="onBlur"
       />
       <span v-else class="name" :title="node.name">{{ node.name }}</span>
 

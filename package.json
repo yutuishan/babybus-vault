@@ -49,8 +49,17 @@
     "build:renderer": "vite build --config vite.renderer.config.ts",
     "start": "electron .",
     "package": "npm run build && npm run asar && node scripts/package-portable.mjs",
+    "package:win": "npm run build && node scripts/package-portable.mjs",
+    "package:mac": "node scripts/make-icns.mjs && node scripts/package-mac.mjs arm64 && node scripts/package-mac.mjs x64",
+    "icon": "node scripts/make-icon.mjs && node scripts/make-icns.mjs",
+    "verify:mac": "node scripts/verify-mac.mjs",
+    "smoke:win": "node scripts/smoke-win.mjs",
     "asar": "node node_modules/@electron/asar/bin/asar.js pack dist app.asar",
     "probe": "node scripts/probe-argon2.mjs",
+    "probe:media": "npm run build && node scripts/probe-media.mjs",
+    "probe:ui": "npm run build && node scripts/probe-ui.mjs",
+    "prune:dist": "node scripts/prune-dist.mjs",
+    "prune:dist:apply": "node scripts/prune-dist.mjs --apply",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -62,6 +71,7 @@
     "markdown-it": "^14.3.1",
     "pdfjs-dist": "^6.3.289",
     "pptx-preview": "^1.0.7",
+    "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

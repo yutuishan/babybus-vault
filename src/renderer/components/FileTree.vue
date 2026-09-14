@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useVault } from '../composables/useVault'
+import { useToast } from '../composables/useToast'
 import { buildTree, pathOf, type TreeNode } from '../utils/tree'
+import { fileIcon } from '../utils/icons'
 import TreeNodeItem from './TreeNode.vue'
 
 const props = defineProps<{ newFolderAt: string | null }>()
@@ -15,7 +17,8 @@ const emit = defineEmits<{
   (e: 'request-export', id: string): void
 }>()
 
-const { state, rename } = useVault()
+const { state, rename, refresh } = useVault()
+const toast = useToast()
 
 const dragMime = 'application/x-vault-node'
 
@@ -99,8 +102,48 @@ function toggle(id: string) {
   else state.expanded.add(id)
 }
 
+/** 库里有没有文件夹 —— 没有的话"全部展开/全部折叠"点了也不会有任何变化，直接置灰 */
+const folderCount = computed(() => state.nodes.filter((n) => n.type === 'folder').length)
+
 function collapseAll() {
   state.expanded.clear()
+}
+
+/* ---------------- 刷新文件库 ---------------- */
+
+const refreshing = ref(false)
+
+/**
+ * 重新从磁盘读取目录树与统计。
+ *
+ * 存在的意义：文件库目录可能被外部程序改动（同步盘、手动删 blob、杀软隔离），
+ * 界面上的树就与磁盘不一致了。这里做一次强制重读，并顺手清掉已失效的选择
+ * ——否则选中一个已经不存在的节点，右侧预览会一直停在旧内容上。
+ *
+ * 加 400ms 冷却只是为了防连点；不做 loading 遮罩，因为读 manifest 是本地毫秒级操作。
+ */
+let lastRefresh = 0
+
+async function onRefresh() {
+  if (refreshing.value) return
+  const now = Date.now()
+  if (now - lastRefresh < 400) return
+  lastRefresh = now
+  refreshing.value = true
+  try {
+    // refresh() 内部会顺手清掉已失效的选择；失败时主进程保持原状态，
+    // 界面上什么都不该消失 —— 只提示一下。
+    const err = await refresh()
+    if (err) toast.error(`刷新失败：${err}`)
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function expandAll() {
+  for (const n of state.nodes) {
+    if (n.type === 'folder') state.expanded.add(n.id)
+  }
 }
 
 /* ---------------- 重命名（扩展名保护） ---------------- */
@@ -249,6 +292,19 @@ function submitNewFolder() {
 }
 
 const newName = ref('')
+
+/** 新建框标题右侧的"将建在哪"，让用户在输入前就知道目标位置 */
+const newFolderLocation = computed(() => {
+  const at = props.newFolderAt
+  if (!at || at === '__root__') return '文件库根目录'
+  const node = state.nodes.find((n) => n.id === at)
+  return node ? node.name : '文件库根目录'
+})
+
+function cancelNewFolder() {
+  newName.value = ''
+  emit('cancel-folder')
+}
 </script>
 
 <template>
@@ -262,11 +318,64 @@ const newName = ref('')
     @contextmenu="openMenu($event, null)"
   >
     <div class="head">
-      <span>文件库</span>
-      <span class="head-actions">
-        <button class="hbtn" title="全部折叠" @click="collapseAll">⊟</button>
+      <span class="head-title">
+        <span>文件库</span>
         <span class="count">{{ state.nodes.length }}</span>
       </span>
+      <!--
+        一律用文字，不用 ⟳ / ⊟ 这类符号：
+        符号的含义全靠猜，中文用户看到 ⟳ 不一定想到"刷新"，看到 ⊟ 更不知道是折叠。
+        展开和折叠都给出来（之前只有"全部折叠"，库是折叠状态时没有一键展开的入口）。
+      -->
+      <span class="head-actions">
+        <button
+          class="hbtn"
+          :disabled="refreshing"
+          title="刷新文件库（重新读取磁盘上的目录）"
+          @click="onRefresh"
+        >
+          {{ refreshing ? '刷新中' : '刷新' }}
+        </button>
+        <button class="hbtn" :disabled="!folderCount" title="展开全部文件夹" @click="expandAll">
+          全部展开
+        </button>
+        <button
+          class="hbtn"
+          :disabled="!folderCount || !state.expanded.size"
+          title="折叠全部文件夹"
+          @click="collapseAll"
+        >
+          全部折叠
+        </button>
+      </span>
+    </div>
+
+    <!--
+      新建文件夹的输入区。
+      刻意做成独立的一条，放在文件树滚动区之外 —— 之前它跟树节点长在同一个列表里，
+      只靠一个 accent 色的边框区分，用户很难判断"这里是在输入"还是"这里多了一个文件夹"。
+      现在它有自己的底色、边框、阴影和标题，与下面的树是两片区域。
+      另外不再用失焦提交：那样点「取消」会先触发失焦、把文件夹真的建出来。
+    -->
+    <div v-if="props.newFolderAt" class="newbar">
+      <div class="newbar-head">
+        <span class="newbar-title">新建文件夹</span>
+        <span class="newbar-where" :title="newFolderLocation">{{ newFolderLocation }}</span>
+      </div>
+      <div class="newbar-row">
+        <span class="icon">📁</span>
+        <input
+          ref="newInputEl"
+          v-model="newName"
+          class="mini"
+          placeholder="输入名称，回车确认"
+          @keydown.enter="submitNewFolder"
+          @keydown.esc="cancelNewFolder"
+          @click.stop
+        />
+        <button class="minibtn ok" :disabled="!newName.trim()" @click="submitNewFolder">创建</button>
+        <button class="minibtn" @click="cancelNewFolder">取消</button>
+      </div>
     </div>
 
     <!-- 搜索结果模式：扁平列表 -->
@@ -319,20 +428,6 @@ const newName = ref('')
 
     <!-- 目录树模式 -->
     <div v-else class="scroll" @click.self="onScrollerClick">
-      <div v-if="props.newFolderAt" class="newfolder">
-        <span class="icon">📁</span>
-        <input
-          ref="newInputEl"
-          v-model="newName"
-          class="mini"
-          placeholder="文件夹名称，回车确认"
-          @keydown.enter="submitNewFolder"
-          @keydown.esc="emit('cancel-folder')"
-          @blur="submitNewFolder"
-          @click.stop
-        />
-      </div>
-
       <TreeNodeItem
         v-for="node in tree"
         :key="node.id"
@@ -366,9 +461,9 @@ const newName = ref('')
         @drop-node="onDrop"
       />
 
-      <div v-if="!tree.length && !props.newFolderAt" class="empty">
+      <div v-if="!tree.length" class="empty">
         <p>文件库是空的</p>
-        <p class="sub">把文件拖到这里，或点击顶部「导入」</p>
+        <p class="sub">把文件拖到这里，或点击顶部「导入文件」</p>
       </div>
     </div>
 
@@ -394,7 +489,8 @@ const newName = ref('')
           </button>
         </template>
         <template v-else>
-          <button class="mitem" @click="collapseAll; closeMenu()">全部折叠</button>
+          <button class="mitem" @click="expandAll(); closeMenu()">全部展开</button>
+          <button class="mitem" @click="collapseAll(); closeMenu()">全部折叠</button>
         </template>
       </div>
     </Teleport>
@@ -424,28 +520,45 @@ const newName = ref('')
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 8px 0 12px;
   font-size: 11.5px;
   color: var(--muted);
   border-bottom: 1px solid var(--line-soft);
 }
 
-.head-actions {
+.head-title {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
 }
 
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 文字按钮。以前这里是 ⟳ / ⊟ 两个符号，含义全靠猜 */
 .hbtn {
-  font-size: 12px;
-  color: var(--faint);
-  padding: 1px 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 2px 6px;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
-.hbtn:hover {
+.hbtn:hover:not(:disabled) {
   color: var(--accent);
   background: var(--hover);
+}
+
+.hbtn:disabled {
+  color: var(--faint);
+  opacity: 0.4;
+  cursor: default;
 }
 
 .count {
@@ -453,6 +566,7 @@ const newName = ref('')
   border-radius: 8px;
   padding: 1px 7px;
   font-size: 11px;
+  color: var(--muted);
 }
 
 .scroll {
@@ -461,24 +575,99 @@ const newName = ref('')
   padding: 4px 0;
 }
 
-.newfolder {
+/*
+ * 新建文件夹输入区。
+ * 用 accent 色的左描边 + 独立底色把它和下面的树明确分开：
+ * 树是"已有的东西"，这里是"正在输入的东西"，两者视觉上不能长得一样。
+ */
+.newbar {
+  flex: 0 0 auto;
+  margin: 6px 8px;
+  padding: 8px 10px 9px;
+  border: 1px solid var(--accent);
+  border-left-width: 3px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  box-shadow: 0 3px 10px var(--dropdown-shadow);
+}
+
+.newbar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.newbar-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.newbar-where {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  max-width: 150px;
+}
+
+.newbar-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 10px;
+}
+
+.newbar-row .icon {
+  flex: 0 0 auto;
+  font-size: 12px;
 }
 
 .mini {
   flex: 1;
-  height: 24px;
+  height: 26px;
   min-width: 0;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 7px;
   font-size: 12.5px;
   outline: none;
   background: var(--panel);
   color: var(--text);
+}
+
+.mini:focus {
+  border-color: var(--accent);
+}
+
+.minibtn {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.minibtn:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+
+.minibtn.ok {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.minibtn.ok:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .empty {

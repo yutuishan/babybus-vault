@@ -9,7 +9,7 @@
  * 拷进 src/renderer/public 而不是直接引用 node_modules：Vite 的 publicDir 会原样产出，
  * 打包后才能在 app:// 下按相对路径取到。该目录已在 .gitignore 中忽略。
  */
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,8 +22,16 @@ if (!existsSync(src)) {
   process.exit(1)
 }
 
-rmSync(dest, { recursive: true, force: true })
 mkdirSync(dest, { recursive: true })
+
+/**
+ * 增量拷贝：目标文件已存在则跳过。
+ *
+ * 这里刻意不用 rmSync 清空重建 —— 一次性删除上百个受管文件会触发宿主环境的
+ * 批量删除保护而直接失败。资源本身来自 node_modules、版本固定，覆盖式拷贝
+ * 没有任何额外收益，增量同步即可幂等。
+ */
+let copied = 0
 
 for (const dir of ['cmaps', 'standard_fonts', 'wasm']) {
   const from = join(src, dir)
@@ -31,8 +39,11 @@ for (const dir of ['cmaps', 'standard_fonts', 'wasm']) {
     console.warn(`[pdf-assets] 缺少 ${dir}，跳过`)
     continue
   }
-  cpSync(from, join(dest, dir), { recursive: true })
-  console.log(`[pdf-assets] 已复制 ${dir}`)
+  cpSync(from, join(dest, dir), {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+  })
+  copied++
 }
-
-console.log('[pdf-assets] 完成 ->', dest)
+console.log(`[pdf-assets] 已同步 ${copied} 组运行时资源 ->`, dest)

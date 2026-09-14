@@ -1,18 +1,36 @@
 node_modules/
 dist/
 release/
-build/
 app.asar
 app-*.asar
 .asar-staging*/
 
+# build/ 里只有两个打包用的图标，是 package-*.mjs 的必需输入。
+# 体积很小（约 67KB）且生成过程确定，直接入库 —— 免得克隆下来打包时才发现缺图标。
+build/*
+!build/icon.ico
+!build/icon.icns
+
 # pdf.js 运行时资源，由 scripts/prepare-pdf-assets.mjs 从 node_modules 生成
 src/renderer/public/
+
+# 打包时下载的 Electron 二进制缓存（scripts/package-mac.mjs）
+.tmp-mac/
+
+# 本地运行时配置（应用自己写的，不是源码）
+config.json
+
+# AI 工作记忆（本地笔记，非项目源码）
+.workbuddy-ai/
 
 # 测试与类型检查的临时输出
 test-result.json
 test-out.txt
 typecheck.txt
+
+# 端到端探针的输出（scripts/probe-*.mjs 生成）
+probe-media-out.json
+probe-ui-out.json
 
 # 文件库绝对不能进版本库
 *.enc

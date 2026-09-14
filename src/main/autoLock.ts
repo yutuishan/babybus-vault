@@ -5,6 +5,9 @@
  * 锁定后主密钥与目录树明文全部清空，渲染进程显示锁屏遮罩。
  *
  * 计时放在主进程：渲染进程可以伪造心跳报文，主进程的时间不能被前端骗过去。
+ *
+ * 注意：没有「从不」档。autoLockMinutes 恒为 >0（见 config.loadConfig 的归一化），
+ * 所以自动上锁永远生效 —— 界面上虽然去掉了该选项，这里也不留后门。
  */
 import { powerMonitor } from 'electron'
 import type { BrowserWindow } from 'electron'
@@ -25,7 +28,6 @@ export function startAutoLock(window: BrowserWindow, onLock: () => void): void {
   if (checkTimer) clearInterval(checkTimer)
   checkTimer = setInterval(() => {
     const minutes = loadConfig().autoLockMinutes
-    if (minutes <= 0) return
     if (Date.now() - lastActivity >= minutes * 60_000) {
       triggerLock('idle')
     }
@@ -50,7 +52,6 @@ export function heartbeat(): void {
 
 export function secondsUntilLock(): number {
   const minutes = loadConfig().autoLockMinutes
-  if (minutes <= 0) return Number.POSITIVE_INFINITY
   const elapsed = Date.now() - lastActivity
   return Math.max(0, Math.ceil((minutes * 60_000 - elapsed) / 1000))
 }

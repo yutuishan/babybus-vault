@@ -33,8 +33,13 @@ export interface CreateMetaResult {
   elapsedMs: number
 }
 
-/** 创建新的 vault.meta 并返回派生出的主密钥（KDF 是异步的，因此这里也是异步） */
-export async function createVaultMeta(password: string): Promise<CreateMetaResult> {
+/**
+ * 创建新的 vault.meta 并返回派生出的主密钥（KDF 是异步的，因此这里也是异步）
+ *
+ * @param hint 主密码提示语。**会以明文写进 vault.meta** —— 这是为了让锁屏界面
+ *   也能显示提示（见 VaultMeta.hint 的说明）。空串表示不写这个字段。
+ */
+export async function createVaultMeta(password: string, hint = ''): Promise<CreateMetaResult> {
   const salt = generateSalt()
   const { key, kdf, kdfImpl, params, elapsedMs } = await deriveMasterKey(password, salt)
 
@@ -54,6 +59,7 @@ export async function createVaultMeta(password: string): Promise<CreateMetaResul
     wipe(verifyKey)
   }
 
+  const cleanHint = normalizeHint(hint)
   return {
     meta: {
       version: VAULT_META_VERSION,
@@ -62,10 +68,16 @@ export async function createVaultMeta(password: string): Promise<CreateMetaResul
       kdfParams: { ...params } as unknown as Record<string, number>,
       salt: salt.toString('base64'),
       verify,
+      ...(cleanHint ? { hint: cleanHint } : {}),
     },
     masterKey: key,
     elapsedMs,
   }
+}
+
+/** 提示语是用户手写的短句，限制长度避免被当成隐蔽的存储通道滥用 */
+export function normalizeHint(hint: unknown): string {
+  return String(hint ?? '').trim().slice(0, 200)
 }
 
 export interface VerifyResult {
@@ -135,6 +147,24 @@ export function readVaultMeta(vaultDir: string): VaultMeta {
     )
   }
   return meta
+}
+
+/**
+ * 读主密码提示语 —— **不需要密码**。
+ *
+ * 存在的唯一理由是锁屏界面要显示提示：那时主密钥已经清空，走不了 Vault 实例。
+ * 提示语就存在明文的 vault.meta 里，所以这里只是把 JSON 读出来，没有任何解密动作。
+ *
+ * 读不到（目录不存在、不是文件库、JSON 坏了、没有这个字段）一律返回空串 ——
+ * 锁屏界面不该因为读个提示语失败而报错。
+ */
+export function peekHint(vaultDir: string): string {
+  try {
+    if (typeof vaultDir !== 'string' || !vaultDir) return ''
+    return normalizeHint(readVaultMeta(vaultDir).hint)
+  } catch {
+    return ''
+  }
 }
 
 /** 原子化写入 vault.meta（先写 tmp 再 rename） */

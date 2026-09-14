@@ -40,8 +40,13 @@ export const MANIFEST_TMP_FILENAME = 'manifest.enc.tmp'
 // ---------------------------------------------------------------- 序列化
 
 export function serializeManifest(manifest: Manifest): Buffer {
-  const json = JSON.stringify({ version: MANIFEST_VERSION, nodes: manifest.nodes })
-  return Buffer.from(json, 'utf8')
+  // hint 一并序列化 —— 它跟文件名、目录结构享有同等级别的保护
+  const body: Record<string, unknown> = {
+    version: MANIFEST_VERSION,
+    nodes: manifest.nodes,
+  }
+  if (manifest.hint) body.hint = manifest.hint
+  return Buffer.from(JSON.stringify(body), 'utf8')
 }
 
 export function deserializeManifest(buf: Buffer): Manifest {
@@ -49,7 +54,11 @@ export function deserializeManifest(buf: Buffer): Manifest {
   if (!parsed || !Array.isArray(parsed.nodes)) {
     throw new Error('manifest 格式损坏：缺少 nodes 数组')
   }
-  return { version: parsed.version ?? MANIFEST_VERSION, nodes: parsed.nodes }
+  return {
+    version: parsed.version ?? MANIFEST_VERSION,
+    nodes: parsed.nodes,
+    hint: typeof parsed.hint === 'string' ? parsed.hint : undefined,
+  }
 }
 
 // ---------------------------------------------------------------- 加解密

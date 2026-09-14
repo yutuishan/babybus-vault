@@ -2,11 +2,32 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      ⚠️ CSP 有**两份**，必须同步改：这一份（meta）和 src/main/index.ts 里的
+      `applySecurityHeaders()`（响应头）。浏览器对同一个文档同时执行两份策略，
+      任何一份不通过就拒绝加载 —— 曾经只改了响应头那份，于是 `vault:` 音视频
+      被这份 meta 策略拦下，播放器报 "Media load rejected by URL safety check"。
+      `media-src` 里的 `vault:` 是音视频流式解密通道（见 src/main/vault/mediaProtocol.ts）。
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data: vault:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      首屏底色。必须在加载任何脚本之前定下来：主题首选是亮色，
+      若用户曾切到暗色，main.ts 会在挂载前同步改掉 dataset，避免白屏闪一下再变黑。
+    -->
+    <style>
+      html {
+        background: #eef0f4;
+        color-scheme: light;
+      }
+      html[data-theme='dark'] {
+        background: #17191f;
+        color-scheme: dark;
+      }
+    </style>
     <title>宝宝巴士</title>
   </head>
   <body>

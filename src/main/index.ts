@@ -11,12 +11,19 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { registerIpc } from './ipc/handlers'
 import { heartbeat, secondsUntilLock, startAutoLock, triggerLock } from './autoLock'
 import { closeVault } from './vault/session'
+import { VAULT_SCHEME, registerVaultProtocol } from './vault/mediaProtocol'
+import { runMediaProbe } from './mediaProbe'
 import { runSelfTest, runUiTest } from './selftest'
+import { runUiProbe } from './uiProbe'
 import { CH } from '@shared/ipc'
 
 const APP_NAME = '宝宝巴士'
 
 /** 无网络、无 eval、无外部框架 —— 预览用的 Blob URL 走 data:/blob: 特例 */
+// ⚠️ 这段 CSP 与 src/renderer/index.html 里的 <meta http-equiv="Content-Security-Policy">
+//    是**两份独立的策略**，浏览器两份都执行，任一份不通过就拒绝加载。
+//    改这里必须同步改那里，否则会出现「明明放行了却还是被拦」的诡异现象
+//    （vault: 音视频就因此被 meta 那份拦过，报 Media load rejected by URL safety check）。
 const CSP = [
   "default-src 'self'",
   // 'wasm-unsafe-eval'：pdf.js v6 的部分图像解码器走 WebAssembly
@@ -24,7 +31,9 @@ const CSP = [
   "worker-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "media-src 'self' blob: data:",
+  // vault: 是音视频的流式解密通道（见 vault/mediaProtocol.ts），
+  // 它不指向任何网络地址，只是把密文按 Range 解出来喂给 <video>/<audio>
+  "media-src 'self' blob: data: vault:",
   "font-src 'self' data:",
   // 'self' 只指 app:// 自身，不含任何网络地址，零网络约束仍然成立。
   // 放开它是因为 pdf.js 要用 fetch 取 cmaps / 标准字体 / wasm 解码器。
@@ -42,11 +51,25 @@ let mainWindow: BrowserWindow | null = null
  *
  * 原因：file:// 是不透明源（opaque origin），Chromium 会拒绝从它加载 Web Worker，
  * pdf.js 的解码线程因此起不来。同时自定义协议能拿到真实源，CSP 也才能真正生效。
- * 后续 vault:// 流式协议复用同一套注册方式。
+ *
+ * vault:// 走同一套注册方式，用于音视频的流式解密（vault/mediaProtocol.ts）。
+ * stream: true 是关键 —— 没有它就没有 ReadableStream 响应体，也就没有 Range 分片，
+ * 大视频只能整份读完才能播。
  */
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: false,
+      bypassCSP: false,
+      stream: true,
+    },
+  },
+  {
+    scheme: VAULT_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -244,7 +267,46 @@ if (!gotLock) {
 
     applySecurityHeaders()
     registerAppProtocol()
+    registerVaultProtocol()
     createWindow()
+
+    // 探针模式：必须跑在真实协议栈 + 真实 CSP + 真实 DOM 之下，所以单测替代不了它们
+    const probeMode = (['--probe-media', '--probe-ui'] as const).find((flag) =>
+      process.argv.includes(flag),
+    )
+
+    if (probeMode) {
+      /**
+       * 探针跑完必须真的退出。
+       *
+       * app.exit() 在还有未释放的协议流 fd 时不保证立刻终止进程 —— 实测探针已经
+       * 打印出 __PROBE__ 结果，进程却继续挂着，launcher 只能等到超时才收工，
+       * 于是一次**成功**的探针被报成 TIMEOUT。结果已经写进 stdout，这里不需要优雅收尾，
+       * 所以补一个兜底的硬退出（unref 过的定时器不会自己拖住事件循环）。
+       */
+      const hardExit = (code: number): void => {
+        app.exit(code)
+        setTimeout(() => process.exit(code), 2000).unref()
+      }
+
+      // 探针里也要挂 IPC：否则 configGet 之类会报 "No handler registered"，
+      // 渲染进程拿不到 config，界面表现与真实运行不一致
+      registerIpc(() => mainWindow)
+
+      mainWindow!.webContents.once('did-finish-load', () => {
+        const run = probeMode === '--probe-ui' ? runUiProbe : runMediaProbe
+        void run(mainWindow!)
+          .then((result) => {
+            console.log('__PROBE__' + JSON.stringify(result))
+            hardExit(0)
+          })
+          .catch((err: unknown) => {
+            console.error(`[${probeMode}] FAILED:`, err)
+            hardExit(1)
+          })
+      })
+      return
+    }
 
     registerIpc(() => mainWindow)
     startAutoLock(mainWindow!, () => {
@@ -261,8 +323,11 @@ if (!gotLock) {
   })
 
   app.on('window-all-closed', () => {
+    // 关掉窗口就锁库。macOS 上应用会留在程序坞里，如果沿用「darwin 不处理」的写法，
+    // 关窗后保险箱仍是解锁状态 —— 任何人点一下图标就能看到解密后的内容，
+    // 对一个保险箱来说不可接受。锁完之后再激活需要重新输入主密码。
+    closeVault()
     if (process.platform !== 'darwin') {
-      closeVault()
       app.quit()
     }
   })

@@ -69,13 +69,29 @@ if (runtimeDeps.length > 0) {
   const nmStaging = join(staging, 'node_modules')
   mkdirSync(nmStaging, { recursive: true })
   const nmRoot = join(root, 'node_modules')
-  for (const dep of runtimeDeps) {
+  // 递归复制传递依赖：word-extractor → saxes / yauzl 这类二级依赖
+  // 只在 dist 里被 external 的包会走到这里，依赖图很小，全量 BFS 足够
+  const queue = [...runtimeDeps]
+  const copied = new Set()
+  while (queue.length > 0) {
+    const dep = queue.shift()
+    if (copied.has(dep)) continue
+    copied.add(dep)
     const src = join(nmRoot, dep)
-    if (existsSync(src)) {
-      cpSync(src, join(nmStaging, dep), { recursive: true, dereference: true })
-      console.log('[pack] 复制运行时依赖：', dep)
-    } else {
+    if (!existsSync(src)) {
       console.warn(`[pack] 警告：运行时依赖 ${dep} 在 node_modules 中不存在`)
+      continue
+    }
+    cpSync(src, join(nmStaging, dep), { recursive: true, dereference: true })
+    console.log('[pack] 复制运行时依赖：', dep)
+    const depPkgPath = join(src, 'package.json')
+    if (existsSync(depPkgPath)) {
+      try {
+        const depPkg = JSON.parse(await readFile(depPkgPath, 'utf8'))
+        for (const sub of Object.keys(depPkg.dependencies ?? {})) queue.push(sub)
+      } catch {
+        // 个别包的 package.json 损坏不影响整体复制
+      }
     }
   }
 }
@@ -97,6 +113,14 @@ try {
 const resDir = join(out, 'resources')
 mkdirSync(resDir, { recursive: true })
 copyFileSync(srcAsar, join(resDir, 'app.asar'))
+
+// 中间产物直接删掉：以前留在这里会在项目根目录堆一堆 app-<时间戳>.asar，
+// 每次打包多 5~45 MB，时间一长就分不清哪个是有效产物。
+try {
+  rmSync(srcAsar, { force: true })
+} catch (err) {
+  console.warn(`[pack] 警告：清理中间 asar 失败 (${err.code})，可手动删除 ${srcAsar}`)
+}
 
 // 5) README
 writeFileSync(

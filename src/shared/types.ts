@@ -26,6 +26,17 @@ export interface ManifestNode {
 export interface Manifest {
   version: number
   nodes: ManifestNode[]
+  /**
+   * 主密码提示语 —— **历史字段，仅用于迁移读取**。
+   *
+   * 早期版本把提示语放在加密的 manifest 里，代价是锁屏时看不到（密钥已清空，
+   * 主进程自己都读不出来）。后来按需求改成锁屏也要能看见，提示语就搬到了
+   * vault.meta 的 `hint` 字段（明文）。这里保留字段定义只为兼容旧库：
+   * Vault.open 时如果发现 manifest 里有提示语而 meta 里没有，会自动迁移过去。
+   *
+   * 新代码不要再写这个字段。
+   */
+  hint?: string
 }
 
 /** vault.meta 中的密码校验值（GCM 必须要 nonce/ciphertext/tag 三元组） */
@@ -35,7 +46,7 @@ export interface VerifyPayload {
   tag: string
 }
 
-/** vault.meta：非敏感，可随库迁移，不含任何文件名与目录结构 */
+/** vault.meta：不含任何文件名与目录结构，可随库迁移 */
 export interface VaultMeta {
   version: number
   kdf: 'argon2id' | 'scrypt'
@@ -45,6 +56,18 @@ export interface VaultMeta {
   /** base64 编码的盐（16 字节） */
   salt: string
   verify: VerifyPayload
+  /**
+   * 主密码提示语（可选）。
+   *
+   * ⚠️ 这个字段是**明文**的，任何拿到这个文件夹的人都能直接读出来 ——
+   * 这是为了满足「锁屏界面也要显示提示」而付出的明确代价：
+   * 密钥在锁定时已被清空，要在不输入密码的前提下显示提示，它就只能是不加密的。
+   *
+   * 因此界面上必须写清楚「提示语以明文保存，不要直接写出密码本身」。
+   * 反过来说，如果哪天又要求"提示语必须保密"，那这个字段就得删掉，
+   * 提示语会退回成"只有解锁后才可见"。
+   */
+  hint?: string
 }
 
 /** 传给渲染进程的节点视图（不含 blob 路径等内部信息） */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useVault } from '../composables/useVault'
 import { useToast } from '../composables/useToast'
 
@@ -10,7 +10,6 @@ const toast = useToast()
 
 const version = ref('')
 const tab = ref<'general' | 'password'>('general')
-
 const theme = computed(() => state.config?.theme ?? 'light')
 const fontScale = computed(() => state.config?.fontScale ?? 1)
 const FONT_SCALES = [
@@ -34,13 +33,46 @@ const confirmPassword = ref('')
 const pwBusy = ref(false)
 const pwError = ref('')
 
+/**
+ * 密码提示。
+ *
+ * 提示语存在明文的 vault.meta 里，所以**锁屏界面也会显示它** —— 这是需求要的效果：
+ * 想不起密码时，锁屏上就能看到当初给自己留的线索。
+ *
+ * 代价是：任何拿到这个文件夹的人都能直接读出提示语。因此输入框下面必须写清楚
+ * 「不要直接把密码本身写进去」，让用户在写下这句话时就知道它是公开的。
+ */
+const hintDraft = ref('')
+const hintSaving = ref(false)
+
+// 每次打开对话框都从 state 重新取一遍：组件本身是常驻的（只有 mask 在 v-if），
+// 如果在 setup 里取一次，之后解锁/换库拿到的就是空值。
+watch(model, (open) => {
+  if (open) hintDraft.value = state.vault.hint ?? ''
+})
+
+async function saveHint() {
+  hintSaving.value = true
+  try {
+    const res = await window.api.setHint(hintDraft.value)
+    if (!res.ok) {
+      toast.error(res.error)
+      return
+    }
+    state.vault.hint = hintDraft.value.trim() || null
+    toast.ok(hintDraft.value.trim() ? '密码提示已保存' : '密码提示已清除')
+  } finally {
+    hintSaving.value = false
+  }
+}
+
+// 不提供「从不」：文件库一旦解锁就永久明文可读，必须有一道自动上锁的兜底
 const autoLockOptions = [
   { value: 1, label: '1 分钟' },
   { value: 5, label: '5 分钟' },
   { value: 15, label: '15 分钟' },
   { value: 30, label: '30 分钟' },
   { value: 60, label: '1 小时' },
-  { value: 0, label: '从不' },
 ]
 
 const rules = computed(() => [
@@ -148,8 +180,6 @@ if (model.value) void loadVersion()
         <div class="divider" />
 
         <div class="info">
-          <div class="line"><span>文件库位置</span><b>{{ state.dir }}</b></div>
-          <div class="line"><span>密钥派生</span><b>{{ state.vault.kdf }}（{{ state.vault.kdfImpl }}）</b></div>
           <div class="line"><span>文件数</span><b>{{ state.vault.fileCount }}</b></div>
           <div class="line"><span>版本</span><b>{{ version || '—' }}</b></div>
         </div>
@@ -191,6 +221,30 @@ if (model.value) void loadVersion()
         </div>
 
         <p v-if="pwError" class="err">{{ pwError }}</p>
+
+        <div class="divider" />
+
+        <div class="field">
+          <label>密码提示（可选）</label>
+          <div class="hintrow">
+            <input
+              v-model="hintDraft"
+              class="input"
+              type="text"
+              maxlength="200"
+              placeholder="例如：常用那串 + 生日"
+            />
+            <button class="btn" :disabled="hintSaving" @click="saveHint">
+              {{ hintSaving ? '保存中…' : '保存提示' }}
+            </button>
+          </div>
+          <span class="tip warn-tip">
+            提示语以<b>明文</b>保存在文件库里，<b>锁屏和输入主密码时都会显示</b>，方便你回忆；
+            也正因如此，请勿直接把密码本身写进去。清空即删除。
+          </span>
+        </div>
+
+        <div class="divider" />
 
         <p class="note">
           修改主密码只会重新包装每个文件的密钥，<b>不会重新加密文件内容</b>，因此大文件库也能瞬间完成。
@@ -397,5 +451,34 @@ if (model.value) void loadVersion()
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.hintrow {
+  display: flex;
+  gap: 8px;
+}
+
+.hintrow .input {
+  flex: 1;
+}
+
+.hintrow .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.tip {
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.7;
+}
+
+/* 明文保存这件事必须让用户看见，所以给它提示色而不是灰色小字 */
+.tip.warn-tip {
+  color: var(--warn-text, var(--warn));
+}
+
+.tip.warn-tip b {
+  color: inherit;
 }
 </style>

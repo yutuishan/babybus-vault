@@ -1,3 +1,6 @@
+/** 音视频扩展名表与主进程共用一份，避免"文件树认得、预览说不支持"这类不一致 */
+import { AUDIO_EXTS as AUDIO, VIDEO_EXTS as VIDEO, normalizeExt } from '@shared/media'
+
 export function formatSize(bytes: number | undefined): string {
   if (bytes === undefined) return '—'
   if (bytes < 1024) return `${bytes} B`
@@ -26,13 +29,13 @@ export function formatCountdown(seconds: number): string {
 const IMAGE = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico', 'avif']
 const TEXT = ['txt', 'log', 'csv', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf']
 const MARKDOWN = ['md', 'markdown', 'mdown']
-const AUDIO = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma']
-const VIDEO = ['mp4', 'mov', 'mkv', 'avi', 'webm']
 const PDF = ['pdf']
 const DOCX = ['docx']
-const SHEET = ['xlsx']
+/** 旧版 Word 二进制格式：mammoth 不支持，走主进程 word-extractor 提取纯文本预览 */
+const DOC = ['doc']
+const SHEET = ['xlsx', 'xls']
 const SLIDES = ['pptx']
-const OFFICE = ['doc', 'xls', 'ppt', 'odt', 'ods', 'odp']
+const OFFICE = ['ppt', 'odt', 'ods', 'odp']
 
 export type PreviewKind =
   | 'image'
@@ -42,13 +45,18 @@ export type PreviewKind =
   | 'video'
   | 'pdf'
   | 'docx'
+  | 'doc'
   | 'sheet'
   | 'slides'
   | 'office'
   | 'unknown'
 
 export function previewKind(ext: string | undefined): PreviewKind {
-  const e = (ext ?? '').toLowerCase()
+  // 走共享的 normalizeExt（去前导点 + 转小写），不要自己写 toLowerCase。
+  // 目前 manifest 存的 ext 已经是不带点的小写形式，所以两种写法结果一样；
+  // 但只要有人传进来一个 ".PDF"，只 toLowerCase 就会判成 unknown —— 静默降级成
+  // "不支持预览"，很难查。icons.spec.ts 曾经因为这一点虚报过一次。
+  const e = normalizeExt(ext)
   if (IMAGE.includes(e)) return 'image'
   if (MARKDOWN.includes(e)) return 'markdown'
   if (TEXT.includes(e)) return 'text'
@@ -56,6 +64,7 @@ export function previewKind(ext: string | undefined): PreviewKind {
   if (VIDEO.includes(e)) return 'video'
   if (PDF.includes(e)) return 'pdf'
   if (DOCX.includes(e)) return 'docx'
+  if (DOC.includes(e)) return 'doc'
   if (SHEET.includes(e)) return 'sheet'
   if (SLIDES.includes(e)) return 'slides'
   if (OFFICE.includes(e)) return 'office'
@@ -70,6 +79,7 @@ export const PREVIEW_LABEL: Record<PreviewKind, string> = {
   video: '视频',
   pdf: 'PDF',
   docx: 'Word',
+  doc: 'Word 97-2003',
   sheet: 'Excel',
   slides: 'PPT',
   office: '旧版 Office',

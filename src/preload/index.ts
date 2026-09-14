@@ -7,32 +7,41 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { CH } from '@shared/ipc'
 import type { VaultBridge } from '@shared/ipc'
+import { toPlain } from '@shared/plain'
 
 const api: VaultBridge = {
   appVersion: () => ipcRenderer.invoke(CH.appVersion),
   configGet: () => ipcRenderer.invoke(CH.appConfigGet),
-  configSet: (patch) => ipcRenderer.invoke(CH.appConfigSet, patch),
-  pickDirectory: (opts) => ipcRenderer.invoke(CH.appPickDirectory, opts),
-  pickFiles: (opts) => ipcRenderer.invoke(CH.appPickFiles, opts),
+  configSet: (patch) => ipcRenderer.invoke(CH.appConfigSet, toPlain(patch)),
+  pickDirectory: (opts) => ipcRenderer.invoke(CH.appPickDirectory, toPlain(opts)),
+  pickFiles: (opts) => ipcRenderer.invoke(CH.appPickFiles, toPlain(opts)),
   openExternal: (url) => ipcRenderer.invoke(CH.appOpenExternal, url),
 
   probe: (dir) => ipcRenderer.invoke(CH.vaultProbe, dir),
-  create: (dir, password) => ipcRenderer.invoke(CH.vaultCreate, dir, password),
+  create: (dir, password, hint) => ipcRenderer.invoke(CH.vaultCreate, dir, password, hint ?? ''),
   open: (dir, password) => ipcRenderer.invoke(CH.vaultOpen, dir, password),
   lock: () => ipcRenderer.invoke(CH.vaultLock),
   state: () => ipcRenderer.invoke(CH.vaultState),
   list: () => ipcRenderer.invoke(CH.vaultList),
+  reload: () => ipcRenderer.invoke(CH.vaultReload),
   createFolder: (parentId, name) => ipcRenderer.invoke(CH.vaultCreateFolder, parentId, name),
   rename: (id, name) => ipcRenderer.invoke(CH.vaultRename, id, name),
-  remove: (ids) => ipcRenderer.invoke(CH.vaultRemove, ids),
+  remove: (ids) => ipcRenderer.invoke(CH.vaultRemove, toPlain(ids)),
   move: (id, parentId) => ipcRenderer.invoke(CH.vaultMove, id, parentId),
   search: (keyword) => ipcRenderer.invoke(CH.vaultSearch, keyword),
   searchContent: (keyword) => ipcRenderer.invoke(CH.vaultSearchContent, keyword),
-  importPaths: (parentId, paths) => ipcRenderer.invoke(CH.vaultImport, parentId, paths),
-  exportNodes: (ids) => ipcRenderer.invoke(CH.vaultExport, ids),
+  importPaths: (parentId, paths, policy) =>
+    ipcRenderer.invoke(CH.vaultImport, parentId, toPlain(paths), policy ?? 'keep-both'),
+  scanImport: (parentId, paths) =>
+    ipcRenderer.invoke(CH.vaultScanImport, parentId, toPlain(paths)),
+  exportNodes: (ids) => ipcRenderer.invoke(CH.vaultExport, toPlain(ids)),
   readFile: (id) => ipcRenderer.invoke(CH.vaultReadFile, id),
+  extractText: (id) => ipcRenderer.invoke(CH.vaultExtractText, id),
   changePassword: (oldPassword, newPassword) =>
     ipcRenderer.invoke(CH.vaultChangePassword, oldPassword, newPassword),
+  getHint: () => ipcRenderer.invoke(CH.vaultGetHint),
+  peekHint: (dir) => ipcRenderer.invoke(CH.vaultPeekHint, dir),
+  setHint: (hint) => ipcRenderer.invoke(CH.vaultSetHint, hint),
 
   heartbeat: () => ipcRenderer.send(CH.autoLockHeartbeat),
 
@@ -62,6 +71,10 @@ const api: VaultBridge = {
   /**
    * 从系统拖入的 File 对象里取真实路径。
    * 渲染进程拿不到 path（安全限制），必须由 preload 用官方 API 解析。
+   *
+   * ⚠️ 这里的 `files` **刻意不过 toPlain**：File 的自有可枚举属性是空的，
+   * toPlain 会把它拍成 `{}`，webUtils.getPathForFile() 随即拿不到路径，
+   * 表现就是"拖进来没反应"。别为了"统一风格"给它套上。
    */
   resolveDropPaths: async (files) => {
     const paths: string[] = []

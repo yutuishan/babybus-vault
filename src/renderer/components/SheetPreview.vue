@@ -1,11 +1,15 @@
 <script setup lang="ts">
 /**
- * Excel（xlsx）预览：SheetJS 解析 + 多工作表切换。
- * 只读前 5000 行 × 100 列，防止巨型表格把 DOM 撑爆。
+ * Excel（xlsx / xls）预览：SheetJS 解析 + 多工作表切换。
+ *
+ * 表格渲染交给 utils/sheet.ts —— 那里处理了「空工作表没有 !ref」这个会让
+ * sheet_to_html 直接抛 Cannot read properties of undefined (reading 'indexOf')
+ * 的坑。这里只负责把结果摆到界面上。
  */
 import { computed, ref, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import * as XLSX from 'xlsx'
+import { sheetToTable, type SheetTable } from '../utils/sheet'
 
 const props = defineProps<{ data: Uint8Array; name: string }>()
 
@@ -13,7 +17,7 @@ const loading = ref(true)
 const error = ref('')
 const sheetNames = ref<string[]>([])
 const activeSheet = ref('')
-const tables = ref<Record<string, string>>({})
+const tables = ref<Record<string, SheetTable>>({})
 
 async function render() {
   loading.value = true
@@ -26,21 +30,26 @@ async function render() {
     const wb = XLSX.read(ab, { type: 'array' })
     sheetNames.value = wb.SheetNames.slice(0, 30)
     activeSheet.value = sheetNames.value[0] ?? ''
+    const next: Record<string, SheetTable> = {}
     for (const name of sheetNames.value) {
-      const ws = wb.Sheets[name]
-      if (!ws) continue
-      tables.value[name] = DOMPurify.sanitize(XLSX.utils.sheet_to_html(ws), {
-        USE_PROFILES: { html: true },
-      })
+      next[name] = sheetToTable(
+        wb.Sheets[name],
+        (html) => DOMPurify.sanitize(html, { USE_PROFILES: { html: true } }),
+        (ws) => XLSX.utils.sheet_to_html(ws),
+      )
     }
+    tables.value = next
   } catch (err) {
+    // 只有「整个工作簿读不出来」才会走到这里；单张表的问题在 sheetToTable 内部消化
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
     loading.value = false
   }
 }
 
-const current = computed(() => tables.value[activeSheet.value] ?? '')
+const current = computed<SheetTable>(
+  () => tables.value[activeSheet.value] ?? { html: '', empty: false },
+)
 
 watch(() => props.data, render, { immediate: true })
 </script>
@@ -62,8 +71,12 @@ watch(() => props.data, render, { immediate: true })
     <div class="area">
       <div v-if="loading" class="hint">正在解析表格…</div>
       <div v-else-if="error" class="hint err">解析失败：{{ error }}</div>
+      <div v-else-if="current.error" class="hint err">
+        这张表解析失败：{{ current.error }}
+      </div>
+      <div v-else-if="current.empty" class="hint">这张表是空的</div>
       <!-- 内容已经过 DOMPurify 消毒 -->
-      <div v-else class="tablewrap" v-html="current" />
+      <div v-else class="tablewrap" v-html="current.html" />
     </div>
   </div>
 </template>
